@@ -1,0 +1,41 @@
+# --- Python Internals (Cache) ---
+__pycache__/
+*.py[cod]
+*$py.class
+
+# --- Virtual Environment ---
+# Folder environment python Anda
+venv/
+.venv/
+env/
+
+# --- Environment Variables (SANGAT PENTING) ---
+# Mencegah password database ter-upload ke internet
+.env
+
+# --- Database & Testing ---
+# Database SQLite sementara yang dibuat saat testing
+*.db
+*.sqlite3
+test.db
+test_hardcore.db
+
+# Cache dari Pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# --- IDE / Editor Settings ---
+.vscode/
+.idea/
+
+# --- Operating System Files ---
+.DS_Store
+Thumbs.db
+
+# --- Streamlit ---
+# Folder config streamlit (jika ada)
+.streamlit/
+
+# --- Logs ---
+*.log

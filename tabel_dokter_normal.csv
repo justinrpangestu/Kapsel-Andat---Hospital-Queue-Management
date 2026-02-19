@@ -1,0 +1,11 @@
+dokter,doctor_id,practice_start_time,practice_end_time,doctor_code,max_patients,poli,prefix
+Dr. Justin,1,8:00:00,15:00:00,B-001,24,Poli Gigi,B
+Dr. Riel,2,8:00:00,15:00:00,B-002,15,Poli Gigi,B
+Dr. a,3,8:00:00,15:00:00,D-001,24,Poli Jantung,D
+Dr. b,4,8:00:00,15:00:00,D-002,18,Poli Jantung,D
+Dr. Eiya,5,8:00:00,15:00:00,C-001,30,Poli Mata,C
+Dr. There,6,8:00:00,15:00:00,C-002,25,Poli Mata,C
+Dr. c,7,8:00:00,15:00:00,E-001,35,Poli Paru,E
+Dr. d,8,8:00:00,15:00:00,E-002,23,Poli Paru,E
+Dr. Abel,9,8:00:00,15:00:00,A-001,10,Poli Umum ,A
+Dr. Darell,10,8:00:00,15:00:00,A-002,32,Poli Umum ,A
