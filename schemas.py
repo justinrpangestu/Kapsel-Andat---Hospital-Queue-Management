@@ -159,6 +159,7 @@ class PelayananSchema(BaseModel):
     completion_time: Optional[datetime] = None
     doctor_schedule: Optional[str] = None 
     catatan_medis: Optional[str] = None 
+    estimated_wait_time: Optional[int] = None #dalam menit
     model_config = ConfigDict(from_attributes=True)
 
 class ClinicStats(BaseModel):
@@ -193,7 +194,7 @@ class UserCreate(BaseModel):
     # Validator Username & Password
     @field_validator('username', 'password')
     def clean_credentials(cls, v, info):
-        return validate_not_empty(v, info.field_name)
+        return validate_not_empty(v.strip().lower(), info.field_name)
 
 class Token(BaseModel):
     access_token: str
@@ -205,13 +206,14 @@ class Token(BaseModel):
 class TicketCreate(BaseModel):
     poli: str
     doctor_id: int
-    username_pasien: Optional[str] = None # Tetap ada untuk Petugas/Admin
-    visit_date: str
+    username_pasien: Optional[str] = None
+    visit_date: date  # <--- Ubah str jadi date
 
-    # KHUSUS POLI: Cukup Trim (karena poli biasanya dipilih dari dropdown, formatnya sudah tetap)
-    @field_validator('poli')
-    def clean_poli(cls, v):
-        return validate_not_empty(v, "Poli")
+    @field_validator('visit_date')
+    def check_date(cls, v):
+        if v < date.today():
+            raise ValueError('Tidak bisa mendaftar untuk tanggal masa lalu.')
+        return v
     
     # --- TAMBAHKAN CONTOH DI SINI ---
     model_config = ConfigDict(

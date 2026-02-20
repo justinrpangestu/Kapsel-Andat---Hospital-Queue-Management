@@ -216,8 +216,23 @@ else:
                                 st.write(f"**{d['poli']}** - {d['dokter']}")
                                 st.write(f"📅 {d['visit_date']}")
                                 st.info("Silakan cetak atau foto QR Code ini.")
+            
+                                # TAMPILAN ESTIMASI BARU
+                                wait_time = d.get('estimated_wait_time', 0)
+                                tgl_skrg = datetime.now().date()
+                                tgl_kunjungan = datetime.strptime(d['visit_date'], "%Y-%m-%d").date() # Pastikan formatnya sesuai
+
+                                if wait_time > 0:
+                                    st.warning(f"⏳ Estimasi Waktu Tunggu: **{wait_time} Menit**")
+                                else:
+                                    # Cek apakah kunjungannya hari ini atau bukan
+                                    if tgl_kunjungan == tgl_skrg:
+                                        st.success("🟢 Anda adalah antrean berikutnya! Mohon bersiap.")
+                                    else:
+                                        st.info(f"✨ Anda adalah pasien pertama untuk jadwal tanggal {d['visit_date']}.")
                         st.session_state['selected_doc'] = None
                     else: st.error(f"⛔ Gagal! Status Code: {r.status_code}\n{r.text}")
+
                 except Exception as e: st.error(f"Error Sistem: {str(e)}")
 
     # =================================================================
@@ -241,6 +256,9 @@ else:
                             st.write(f"**{t['poli']}** | {t['dokter']}")
                             st.caption(f"{t['visit_date']}")
                             if t.get('catatan_medis'): st.info(f"Catatan: {t['catatan_medis']}")
+                            if t['status_pelayanan'] not in ["Selesai"]:
+                                wait_now = t.get('estimated_wait_time', 0)
+                                st.info(f"⏳ Estimasi Tunggu: {wait_now} Menit")
                         with c3:
                             st.write(f"Status: **{t['status_pelayanan']}**")
         except: st.error("Gagal load data.")

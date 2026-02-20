@@ -4,7 +4,7 @@ from fastapi import FastAPI, Depends, HTTPException, status, APIRouter
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import func
+from sqlalchemy import text, func
 from typing import List, Optional
 from datetime import datetime, date, time, timedelta
 import random
@@ -56,6 +56,31 @@ def clean_simple_name(full_name: str) -> str:
     name_clean = re.sub(r'^(dr\.|drs\.|dra\.|ir\.|prof\.|h\.|hj\.|ns\.|mr\.|mrs\.)\s*', '', name_no_suffix, flags=re.IGNORECASE)
     parts = name_clean.replace('.', ' ').split()
     return parts[-1].title() if parts else "User"
+
+def get_estimated_wait_time(db: Session, doctor_id: int, current_queue_seq: int, v_date: date):
+    # 1. Hitung rata-rata durasi pelayanan dokter ini dari data masa lalu (Selesai)
+    # Kita gunakan TIMESTAMPDIFF untuk mencari selisih menit di MySQL
+    avg_service_query = db.query(
+        func.avg(func.timestampdiff(text("MINUTE"), storage.TabelPelayanan.clinic_entry_time, storage.TabelPelayanan.completion_time))
+    ).filter(
+        storage.TabelPelayanan.doctor_id_ref == doctor_id,
+        storage.TabelPelayanan.status_pelayanan == "Selesai"
+    ).scalar()
+
+    # Jika belum ada data historis, kita asumsikan default 15 menit per pasien
+    avg_service_time = float(avg_service_query) if avg_service_query else 15.0
+
+    # 2. Hitung jumlah orang yang belum selesai di depan pasien ini untuk dokter yang sama hari ini
+    people_ahead = db.query(storage.TabelPelayanan).filter(
+        storage.TabelPelayanan.doctor_id_ref == doctor_id,
+        storage.TabelPelayanan.visit_date == v_date,
+        storage.TabelPelayanan.queue_sequence < current_queue_seq,
+        storage.TabelPelayanan.status_pelayanan.in_(["Terdaftar", "Menunggu", "Sedang Dilayani"])
+    ).count()
+
+    # 3. Kalkulasi total menit
+    total_wait_minutes = round(people_ahead * avg_service_time)
+    return total_wait_minutes
 
 def get_random_time_window():
     """Helper untuk import data dummy waktu."""
@@ -438,7 +463,7 @@ def import_random_data(count: int = 10, db: Session = Depends(get_db)):
             db.commit()
             c += 1
             
-        return {"message": f"Sukses import {c} data variatif (Hari Ini & History)."}
+        return {"message": f"Sukses import {c} data variatif."}
         
     except Exception as e:
         db.rollback()
@@ -480,8 +505,6 @@ def scan_barcode(p: schemas.ScanRequest, db: Session = Depends(get_db)):
     
     # Ambil target status berdasarkan lokasi scan
     tgt_stat, tgt_lvl = LOC_MAP.get(p.location)
-    
-    # --- [VALIDASI BARU: URUTAN & CATATAN] ---
 
     # A. Validasi Urutan (Tidak Boleh Mundur & Tidak Boleh Loncat)
     if curr_lvl == tgt_lvl:
@@ -565,6 +588,28 @@ def update_notes(q_num: str, body: schemas.MedicalNoteUpdate, db: Session = Depe
     db.commit()
     return {"message": "Catatan medis berhasil diperbarui"}
 
+    try:
+        with db.begin():
+            # Update tabel utama
+            s.status_pelayanan = tgt_stat
+            # ... update timestamps ...
+            db.add(s)
+
+            # Update tabel gabungan secara otomatis
+            gab = db.query(storage.TabelGabungan).filter(
+                storage.TabelGabungan.queue_number == s.queue_number,
+                storage.TabelGabungan.visit_date == s.visit_date
+            ).first()
+            
+            if gab:
+                gab.status_pelayanan = tgt_stat
+                # ... update timestamps ...
+                db.add(gab)
+        
+        return {"status": "Success", "message": f"Status sinkron: {tgt_stat}"}
+    except Exception as e:
+        raise HTTPException(500, "Gagal sinkronisasi data antar tabel.")
+
 # =================================================================
 # 6. PUBLIC ROUTER
 # =================================================================
@@ -598,12 +643,7 @@ def submit_reg(p: schemas.TicketCreate, db: Session = Depends(get_db), current_u
             raise HTTPException(status_code=400, detail="Petugas WAJIB memasukkan 'Username Pasien' yang sudah terdaftar.")
     
     # 2. VALIDASI TANGGAL
-    # ... (Validasi Tanggal Lama dan Baru tetap sama) ...
-    try:
-        q_date = datetime.strptime(p.visit_date, "%Y-%m-%d").date()
-    except ValueError:
-        raise HTTPException(400, "Format tanggal salah (Gunakan YYYY-MM-DD)")
-
+    q_date = p.visit_date
     if q_date < date.today():
         raise HTTPException(status_code=400, detail=f"Tanggal tidak valid! Tidak bisa mendaftar untuk tanggal masa lalu ({q_date}).")
 
@@ -620,15 +660,12 @@ def submit_reg(p: schemas.TicketCreate, db: Session = Depends(get_db), current_u
             status_code=400, 
             detail=f"Asosiasi salah! Dokter '{doc.dokter}' bertugas di '{doc.poli}', bukan di '{p.poli}'."
         )
-    # ------------------------------------------------
 
     # 4. CEK JAM PRAKTEK (Khusus Hari Ini)
     if q_date == date.today():
         current_time = datetime.now().time()
         if current_time > doc.practice_end_time:
              raise HTTPException(400, detail=f"Pendaftaran Gagal! Jam praktek dokter sudah berakhir pada pukul {doc.practice_end_time.strftime('%H:%M')}.")
-
-    # ... (Validasi tiket, kuota, dan simpan data di bawahnya tetap sama) ...
 
     # 5. VALIDASI SATU TIKET PER HARI
     existing_ticket = db.query(storage.TabelPelayanan).filter(
@@ -647,7 +684,14 @@ def submit_reg(p: schemas.TicketCreate, db: Session = Depends(get_db), current_u
 
     if current_patient_count >= doc.max_patients:
         raise HTTPException(status_code=400, detail=f"Kuota Dokter Penuh! Maksimal {doc.max_patients} pasien per hari.")
+    #Hitung sisa kuota secara akurat (Real-time count)
+    count_pendaftar = db.query(storage.TabelPelayanan).filter(
+        storage.TabelPelayanan.doctor_id_ref == p.doctor_id,
+        storage.TabelPelayanan.visit_date == p.visit_date
+    ).count()
 
+    if count_pendaftar >= doc.max_patients:
+        raise HTTPException(status_code=400, detail=f"Kuota Penuh! Sisa kuota: 0")
     # 7. GENERATE NOMOR & SIMPAN
     seq = current_patient_count + 1
     try: suf = doc.doctor_code.split('-')[-1]
@@ -686,12 +730,75 @@ def submit_reg(p: schemas.TicketCreate, db: Session = Depends(get_db), current_u
     
     db.commit(); db.refresh(new_t)
     
-    return {**new_t.__dict__, "doctor_schedule": f"{str(doc.practice_start_time)[:5]} - {str(doc.practice_end_time)[:5]}"}
+    wait_min = get_estimated_wait_time(db, doc.doctor_id, seq, q_date)
+    
+    db.commit()
+    db.refresh(new_t)
+    
+    # a. Logika Estimasi Waktu (Hanya dihitung jika kunjungan hari ini)
+    wait_min = 0
+    if p.visit_date == date.today():
+        wait_min = get_estimated_wait_time(db, doc.doctor_id, seq, p.visit_date)
+    
+    # b. Hitung Sisa Kuota secara Real-time
+    # count_pendaftar adalah jumlah orang SEBELUM pasien ini terdaftar
+    sisa = doc.max_patients - (count_pendaftar + 1)
 
-@router_public.get("/my-history")
+    # c. Kembalikan SEMUA data dalam SATU return
+    return {
+        "id": new_t.id,
+        "nama_pasien": new_t.nama_pasien,
+        "poli": new_t.poli,
+        "dokter": new_t.dokter,
+        "visit_date": new_t.visit_date,
+        "status_pelayanan": new_t.status_pelayanan,
+        "queue_number": new_t.queue_number,
+        "queue_sequence": new_t.queue_sequence,
+        "doctor_schedule": f"{str(doc.practice_start_time)[:5]} - {str(doc.practice_end_time)[:5]}",
+        "estimated_wait_time": wait_min,
+        "sisa_kuota": sisa if sisa >= 0 else 0
+    }
+
+    # --- MEMULAI TRANSAKSI ---
+    try:
+        with db.begin(): # <--- Ini akan auto-commit jika sukses, auto-rollback jika error
+            # 1. Simpan ke Tabel Utama
+            new_t = storage.TabelPelayanan(
+                # ... (field data) ...
+                visit_date=p.visit_date # Langsung pakai p.visit_date karena sudah bertipe date
+            )
+            db.add(new_t)
+            db.flush() # Mendapatkan ID sementara sebelum commit
+
+            # 2. Simpan ke Tabel Gabungan (Sesuai alasanmu untuk overview data)
+            gab = storage.TabelGabungan(
+                # ... (field data) ...
+                visit_date=p.visit_date
+            )
+            db.add(gab)
+            
+            # Jika semua baris di atas sukses, db.begin() akan melakukan commit otomatis
+        
+        return {"message": "Pendaftaran Berhasil", "id": new_t.id}
+
+    except Exception as e:
+        # Jika ada satu saja yang gagal, database kembali ke kondisi semula
+        raise HTTPException(status_code=500, detail=f"Gagal memproses transaksi: {str(e)}")
+
+@router_public.get("/my-history", response_model=List[schemas.PelayananSchema])
 def get_history(db: Session = Depends(get_db), current_user: dict = Depends(security.get_current_user_token)):
-    return db.query(storage.TabelPelayanan).filter(storage.TabelPelayanan.username == current_user['username']).order_by(storage.TabelPelayanan.visit_date.desc()).all()
-
+    history = db.query(storage.TabelPelayanan).filter(
+        storage.TabelPelayanan.username == current_user['username']
+    ).order_by(storage.TabelPelayanan.visit_date.desc()).all()
+    
+    # Tambahkan kalkulasi estimasi untuk tiket yang belum selesai
+    for h in history:
+        if h.status_pelayanan not in ["Selesai"] and h.visit_date == date.today():
+            h.estimated_wait_time = get_estimated_wait_time(db, h.doctor_id_ref, h.queue_sequence, h.visit_date)
+        else:
+            h.estimated_wait_time = 0
+            
+    return history
 # =================================================================
 # 7. ANALYTICS & MONITOR
 # =================================================================
@@ -771,6 +878,29 @@ def get_analytics(start_date: Optional[date] = None, end_date: Optional[date] = 
         
         "correlation": corr_val, # <--- HASIL KORELASI NYATA
         "text_mining": txt
+    }
+
+@router_analytics.get("/ghosting-report")
+def get_ghosting_rate(db: Session = Depends(get_db)):
+    # 1. Hitung total pendaftar (semua yang punya tiket)
+    total_pendaftar = db.query(storage.TabelPelayanan).count()
+    
+    if total_pendaftar == 0:
+        return {"ghost_rate": 0, "total_patients": 0}
+
+    # 2. Hitung yang "Ghosting" (Status masih 'Terdaftar' padahal visit_date sudah lewat atau hari ini)
+    # Atau lebih akurat: yang checkin_time-nya NULL
+    ghosts = db.query(storage.TabelPelayanan).filter(
+        storage.TabelPelayanan.checkin_time == None
+    ).count()
+
+    ghost_rate = round((ghosts / total_pendaftar) * 100, 2)
+
+    return {
+        "status": "Success",
+        "total_pendaftar": total_pendaftar,
+        "total_ghosts": ghosts,
+        "ghost_rate_percentage": ghost_rate
     }
 # =================================================================
 # 8. APP ROUTER REGISTRATION (FINAL RBAC)

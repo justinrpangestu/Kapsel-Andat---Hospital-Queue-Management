@@ -19,3 +19,6 @@ matplotlib
 python-jose[cryptography]
 argon2-cffi
 python-multipart
+passlib[argon2]
+pytest
+httpx
