@@ -8,9 +8,9 @@ FILE_PELAYANAN = "tabel_pelayanan_normal.csv"
 
 def get_merged_random_data(count: int):
     if not (os.path.exists(FILE_POLI) and os.path.exists(FILE_DOKTER) and os.path.exists(FILE_PELAYANAN)):
-        raise FileNotFoundError("File CSV tidak lengkap.")
+        raise FileNotFoundError("CSV files are incomplete.")
     
-    # Baca dengan skip error
+    # Read with skip error
     df_poli = pd.read_csv(FILE_POLI, on_bad_lines='skip')
     df_dokter = pd.read_csv(FILE_DOKTER, on_bad_lines='skip')
     df_layanan = pd.read_csv(FILE_PELAYANAN, on_bad_lines='skip')
@@ -24,7 +24,6 @@ def get_merged_random_data(count: int):
         for col in df.select_dtypes(include=['object']).columns:
             df[col] = df[col].str.strip()
 
-    # Return raw dataframes for main.py to handle
     return df_dokter, df_layanan
 
 def append_to_csv(filename: str, data: dict):

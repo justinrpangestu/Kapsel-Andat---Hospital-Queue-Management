@@ -2,8 +2,9 @@ from storage import engine, Base
 from sqlalchemy import text
 
 def reset():
-    print("Menghapus database lama...")
+    print("Deleting old database...")
     with engine.connect() as conn:
+        conn.execute(text("SET FOREIGN_KEY_CHECKS = 0"))
         conn.execute(text("DROP TABLE IF EXISTS tabel_gabungan_transaksi"))
         conn.execute(text("DROP TABLE IF EXISTS tabel_pelayanan_normal"))
         conn.execute(text("DROP TABLE IF EXISTS tabel_dokter_normal"))
@@ -12,9 +13,9 @@ def reset():
         conn.execute(text("SET FOREIGN_KEY_CHECKS = 1"))
         conn.commit()
     
-    print("Membuat database baru...")
+    print("Creating new database schema...")
     Base.metadata.create_all(bind=engine)
-    print("Selesai! Database baru siap digunakan.")
+    print("Success! The database is ready.")
 
 if __name__ == "__main__":
     reset()

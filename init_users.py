@@ -4,22 +4,17 @@ import security
 def init_users_final():
     db = SessionLocal()
     try:
-        print("🔄 Menginisialisasi Akun Sesuai Role Baru...")
+        print("🔄 Initializing Staff Accounts...")
         
         staff_list = [
-            # 1. ADMIN (Bisa Semua)
             {"username": "admin", "nama": "Super Admin", "role": "admin"},
-            
-            # 2. PERAWAT (Scanner + Ruang Periksa)
-            {"username": "perawat", "nama": "Ns. Melati", "role": "perawat"},
-            
-            # 3. ADMINISTRASI (Pendaftaran + Scanner + TV)
-            {"username": "admin_depan", "nama": "Petugas Administrasi", "role": "administrasi"},
+            {"username": "nurse", "nama": "Nurse Melati", "role": "perawat"},
+            {"username": "reception", "nama": "Reception Staff", "role": "administrasi"},
         ]
         
         for staff in staff_list:
-            cek = db.query(TabelUser).filter(TabelUser.username == staff['username']).first()
-            if not cek:
+            check = db.query(TabelUser).filter(TabelUser.username == staff['username']).first()
+            if not check:
                 new_user = TabelUser(
                     username=staff['username'],
                     password=security.get_password_hash("123"),
@@ -27,18 +22,17 @@ def init_users_final():
                     nama_lengkap=staff['nama']
                 )
                 db.add(new_user)
-                print(f"✅ Akun dibuat: {staff['username']} ({staff['role']})")
+                print(f"✅ Account created: {staff['username']} ({staff['role']})")
             else:
-                # Update role jika beda (agar sesuai request terbaru Anda)
-                if cek.role != staff['role']:
-                    cek.role = staff['role']
+                if check.role != staff['role']:
+                    check.role = staff['role']
                     db.commit()
-                    print(f"🔄 Role diupdate: {staff['username']} -> {staff['role']}")
+                    print(f"🔄 Role updated: {staff['username']} -> {staff['role']}")
                 else:
-                    print(f"ℹ️ Akun sudah ada: {staff['username']}")
+                    print(f"ℹ️ Account already exists: {staff['username']}")
 
         db.commit()
-        print("Selesai. Password default: 123")
+        print("Done. Default password: 123")
         
     except Exception as e:
         print(f"Error: {e}")

@@ -1,7 +1,7 @@
 import streamlit as st
 import requests
 import pandas as pd
-from datetime import datetime, time
+from datetime import datetime, date, time
 import time as time_lib
 import qrcode
 import io
@@ -13,11 +13,11 @@ import plotly.graph_objects as go
 from wordcloud import WordCloud
 import matplotlib.pyplot as plt
 
-# --- KONFIGURASI ---
+# --- CONFIGURATION ---
 API_URL = "http://127.0.0.1:8000"
-st.set_page_config(page_title="Sistem RS Pintar", layout="wide", page_icon="🏥")
+st.set_page_config(page_title="Smart Hospital System", layout="wide", page_icon="🏥")
 
-# --- CSS CUSTOM (Tampilan Lebih Modern) ---
+# --- CUSTOM CSS (Modern UI) ---
 st.markdown("""
 <style>
     div.stButton > button:first-child { border-radius: 8px; font-weight: bold; }
@@ -27,10 +27,16 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =================================================================
-# 0. SETUP SESSION
+# 0. SESSION SETUP
 # =================================================================
 if 'token' not in st.session_state:
-    st.session_state.update({'token': None, 'role': None, 'nama_user': None, 'status_member': None, 'selected_doc': None})
+    st.session_state.update({
+        'token': None, 
+        'role': None, 
+        'nama_user': None, 
+        'status_member': None, 
+        'selected_doc': None
+    })
 
 # --- HELPERS ---
 def generate_qr(data):
@@ -49,18 +55,18 @@ def decode_qr_from_image(image_buffer):
     except: return None
 
 # =================================================================
-# A. LOGIKA LOGIN / REGISTER
+# A. LOGIN / REGISTER LOGIC
 # =================================================================
 if st.session_state['token'] is None:
-    st.markdown("<h1 style='text-align: center; color: #2E86C1;'>🏥 Sistem Rumah Sakit Pintar</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center; color: #2E86C1;'>🏥 Smart Hospital Management System</h1>", unsafe_allow_html=True)
     st.divider()
     c1, c2 = st.columns(2)
     
     with c1:
-        st.subheader("🔐 Login")
+        st.subheader("🔐 Secure Login")
         u = st.text_input("Username", key="lu")
         p = st.text_input("Password", type="password", key="lp")
-        if st.button("Masuk", type="primary", use_container_width=True):
+        if st.button("Sign In", type="primary", use_container_width=True):
             try:
                 r = requests.post(f"{API_URL}/auth/login", data={"username": u, "password": p})
                 if r.status_code == 200:
@@ -72,24 +78,22 @@ if st.session_state['token'] is None:
                         'status_member': d.get('status_member') 
                     })
                     st.rerun()
-                else: st.error(r.json().get('detail', 'Login Gagal'))
-            except Exception as e: st.error(f"Error Koneksi: {e}")
+                else: st.error(r.json().get('detail', 'Login Failed: Check Credentials'))
+            except Exception as e: st.error(f"Connection Error: {e}")
 
     with c2:
-        st.subheader("📝 Daftar Pasien Baru")
-        rn = st.text_input("Nama Lengkap", key="rn")
+        st.subheader("📝 Patient Registration")
+        rn = st.text_input("Full Name", key="rn")
         ru = st.text_input("Username", key="ru")
         rp = st.text_input("Password", type="password", key="rp")
         
-        if st.button("Daftar", use_container_width=True):
+        if st.button("Create Account", use_container_width=True):
             if rn and ru and rp:
-                sukses_daftar = False 
                 try:
                     payload = {
                         "username": ru.strip(), 
                         "password": rp.strip(), 
-                        "nama_lengkap": rn.strip(), 
-                        "role": "pasien"
+                        "nama_lengkap": rn.strip()
                     }
                     r = requests.post(f"{API_URL}/auth/register", json=payload)
                     
@@ -99,60 +103,55 @@ if st.session_state['token'] is None:
                             'token': d['access_token'], 
                             'role': d['role'], 
                             'nama_user': d['nama'], 
-                            'status_member': "Pasien Baru"
+                            'status_member': "New Patient"
                         })
-                        st.success("Berhasil! Mengalihkan...")
-                        sukses_daftar = True 
+                        st.success("Account created successfully! Redirecting...")
+                        time_lib.sleep(1); st.rerun()
                     else: 
-                        st.error(f"Gagal: {r.json().get('detail', 'Unknown Error')}")
-                except Exception as e: st.error(f"Error Koneksi: {str(e)}")
-
-                if sukses_daftar:
-                    time_lib.sleep(1); st.rerun()
+                        st.error(f"Registration Failed: {r.json().get('detail', 'Unknown Error')}")
+                except Exception as e: st.error(f"Connection Error: {str(e)}")
             else:
-                st.warning("Mohon isi semua kolom.")
+                st.warning("Please fill in all fields.")
 
 # =================================================================
-# B. APLIKASI UTAMA (SETELAH LOGIN)
+# B. MAIN APPLICATION (AUTHENTICATED)
 # =================================================================
 else:
     role = st.session_state['role']
     
     # --- SIDEBAR ---
     st.sidebar.image("https://cdn-icons-png.flaticon.com/512/3135/3135715.png", width=80)
-    st.sidebar.write(f"Halo, **{st.session_state['nama_user']}**")
+    st.sidebar.write(f"Welcome, **{st.session_state['nama_user']}**")
     if st.session_state.get('status_member'):
         st.sidebar.info(f"Status: **{st.session_state['status_member']}**")
-    st.sidebar.caption(f"Akses Role: {role.upper()}")
+    st.sidebar.caption(f"Access Role: {role.upper()}")
     
-    if st.sidebar.button("Logout"):
+    if st.sidebar.button("Log Out"):
         st.session_state.clear(); st.rerun()
     st.sidebar.markdown("---")
 
-    # --- MENU ---
-    MENU_DAFTAR = "📝 Pendaftaran"
-    MENU_RIWAYAT = "📂 Riwayat & Tiket"
-    MENU_SCAN = "📠 Scanner QR"
-    MENU_DOKTER = "👨‍⚕️ Ruang Periksa"
-    MENU_TV = "📺 Layar Antrean"
-    MENU_ADMIN = "📊 Dashboard Admin"
-    MENU_ANALISIS = "📈 Data Science & Insights" # Nama baru biar keren
+    # --- MENU NAVIGATION ---
+    MENU_BOOK = "📝 Registration"
+    MENU_HISTORY = "📂 History & Tickets"
+    MENU_SCAN = "📠 QR Scanner"
+    MENU_CLINIC = "👨‍⚕️ Examination Room"
+    MENU_TV = "📺 Queue Monitor"
+    MENU_ADMIN = "📊 Admin Dashboard"
+    MENU_INSIGHTS = "📈 Data Science & Insights"
 
     menu_opts = []
-    if role == "admin": menu_opts = [MENU_DAFTAR, MENU_SCAN, MENU_DOKTER, MENU_TV, MENU_ADMIN, MENU_ANALISIS]
-    elif role == "perawat": menu_opts = [MENU_SCAN, MENU_DOKTER]
-    elif role == "administrasi": menu_opts = [MENU_DAFTAR, MENU_SCAN, MENU_TV]
-    elif role == "pasien": menu_opts = [MENU_DAFTAR, MENU_RIWAYAT, MENU_TV]
+    if role == "admin": menu_opts = [MENU_BOOK, MENU_SCAN, MENU_CLINIC, MENU_TV, MENU_ADMIN, MENU_INSIGHTS]
+    elif role == "perawat": menu_opts = [MENU_SCAN, MENU_CLINIC]
+    elif role == "administrasi": menu_opts = [MENU_BOOK, MENU_SCAN, MENU_TV]
+    elif role == "pasien": menu_opts = [MENU_BOOK, MENU_HISTORY, MENU_TV]
     else: menu_opts = [MENU_TV]
 
-    menu = st.sidebar.radio("Navigasi", menu_opts)
+    menu = st.sidebar.radio("Navigation", menu_opts)
     headers = {"Authorization": f"Bearer {st.session_state['token']}"}
 
-    # =================================================================
-    # 1. MENU PENDAFTARAN
-    # =================================================================
-    if menu == MENU_DAFTAR:
-        st.header("📝 Pendaftaran Pasien")
+    # 1. REGISTRATION MENU
+    if menu == MENU_BOOK:
+        st.header("📋 Book Appointment")
         try: 
             p_map = {p['poli']: p for p in sorted(requests.get(f"{API_URL}/public/polis", headers=headers).json(), key=lambda x: x['poli'])}
         except: p_map = {}
@@ -162,19 +161,19 @@ else:
         target_user_input = None 
         
         if role in ['admin', 'administrasi', 'perawat']:
-            nm = c1.text_input("Nama Pasien (Sesuai KTP)")
-            target_user_input = c1.text_input("Username Akun Pasien", help="Opsional")
+            nm = c1.text_input("Patient Name (As per ID)")
+            target_user_input = c1.text_input("Patient Account Username", help="Optional")
         else:
-            nm = c1.text_input("Nama Pasien", value=st.session_state['nama_user'], disabled=True)
+            nm = c1.text_input("Patient Name", value=st.session_state['nama_user'], disabled=True)
         
-        pl = c1.selectbox("Poli Tujuan", list(p_map.keys()) if p_map else [], index=None, placeholder="Pilih Poli...")
-        tg = c2.date_input("Tanggal Kunjungan", min_value=datetime.today())
+        pl = c1.selectbox("Target Clinic", list(p_map.keys()) if p_map else [], index=None, placeholder="Choose Clinic...")
+        tg = c2.date_input("Visit Date", min_value=date.today())
 
         if pl:
-            st.markdown("### Pilih Dokter")
+            st.markdown("### Select Doctor")
             try:
                 docs = requests.get(f"{API_URL}/public/available-doctors", params={"poli_name": pl}, headers=headers).json()
-                if not docs: st.warning("Dokter libur/tidak tersedia.")
+                if not docs: st.warning("No doctors available for this clinic.")
                 else:
                     cols = st.columns(3)
                     for i, d in enumerate(docs):
@@ -182,19 +181,21 @@ else:
                             with st.container(border=True):
                                 st.subheader(d['dokter'])
                                 st.info(f"🕒 {str(d['practice_start_time'])[:5]} - {str(d['practice_end_time'])[:5]}")
-                                st.caption(f"Sisa Kuota: {d['max_patients']}")
-                                if st.button("Pilih", key=d['doctor_id'], use_container_width=True):
+                                # Dynamic Quota Display
+                                st.caption(f"Remaining Slots: {d.get('sisa_kuota', d['max_patients'])}")
+                                if st.button("Select", key=d['doctor_id'], use_container_width=True):
                                     st.session_state['selected_doc'] = d
                                     st.rerun()
             except: pass
         
         if st.session_state['selected_doc']:
             doc = st.session_state['selected_doc']
-            st.success(f"Dokter Pilihan: **{doc['dokter']}**")
+            st.success(f"Selected: **{doc['dokter']}**")
             
-            if st.button("✅ Konfirmasi Pendaftaran", type="primary", use_container_width=True):
+            if st.button("✅ Confirm Booking", type="primary", use_container_width=True):
                 clean_nm = nm.strip() if nm else ""
-                if not clean_nm: st.error("⚠️ Nama Pasien WAJIB diisi!"); st.stop()
+                if not clean_nm: 
+                    st.error("⚠️ Patient name is REQUIRED!"); st.stop()
                 
                 payload = {"nama_pasien": clean_nm, "poli": pl, "doctor_id": doc['doctor_id'], "visit_date": str(tg)}
                 if target_user_input: payload["username_pasien"] = target_user_input.strip()
@@ -205,7 +206,7 @@ else:
                         d = r.json()
                         st.balloons()
                         with st.container(border=True):
-                            st.markdown("### 🎫 Tiket Antrean Berhasil Dibuat")
+                            st.markdown("### 🎫 Queue Ticket Generated Successfully")
                             cq, ct = st.columns([1, 2])
                             with cq:
                                 buf = io.BytesIO()
@@ -215,35 +216,30 @@ else:
                                 st.subheader(f"No. {d['queue_number']}")
                                 st.write(f"**{d['poli']}** - {d['dokter']}")
                                 st.write(f"📅 {d['visit_date']}")
-                                st.info("Silakan cetak atau foto QR Code ini.")
-            
-                                # TAMPILAN ESTIMASI BARU
+                                # Dynamic Wait Time Display
                                 wait_time = d.get('estimated_wait_time', 0)
-                                tgl_skrg = datetime.now().date()
-                                tgl_kunjungan = datetime.strptime(d['visit_date'], "%Y-%m-%d").date() # Pastikan formatnya sesuai
+                                tgl_skrg = date.today()
+                                tgl_kunjungan = datetime.strptime(str(d['visit_date']), "%Y-%m-%d").date()
 
                                 if wait_time > 0:
-                                    st.warning(f"⏳ Estimasi Waktu Tunggu: **{wait_time} Menit**")
+                                    st.warning(f"⏳ Estimated Wait: **{wait_time} Minutes**")
                                 else:
-                                    # Cek apakah kunjungannya hari ini atau bukan
                                     if tgl_kunjungan == tgl_skrg:
-                                        st.success("🟢 Anda adalah antrean berikutnya! Mohon bersiap.")
+                                        st.success("🟢 You are next in line! Please be ready.")
                                     else:
-                                        st.info(f"✨ Anda adalah pasien pertama untuk jadwal tanggal {d['visit_date']}.")
+                                        st.info(f"✨ You are the first patient for {d['visit_date']}.")
+                                st.info("Please print or take a photo of this QR code.")
                         st.session_state['selected_doc'] = None
-                    else: st.error(f"⛔ Gagal! Status Code: {r.status_code}\n{r.text}")
+                    else: st.error(f"⛔ Booking Failed! Error: {r.json().get('detail', r.text)}")
+                except Exception as e: st.error(f"System Error: {str(e)}")
 
-                except Exception as e: st.error(f"Error Sistem: {str(e)}")
-
-    # =================================================================
-    # 2. MENU RIWAYAT
-    # =================================================================
-    elif menu == MENU_RIWAYAT:
-        st.header("📂 Tiket & Riwayat Saya")
+    # 2. HISTORY MENU
+    elif menu == MENU_HISTORY:
+        st.header("📂 My Tickets & Visit History")
         try:
             r = requests.get(f"{API_URL}/public/my-history", headers=headers)
             data = r.json()
-            if not data: st.info("Belum ada riwayat.")
+            if not data: st.info("No visit history found.")
             else:
                 for t in data:
                     with st.container(border=True):
@@ -255,31 +251,26 @@ else:
                             st.subheader(t['queue_number'])
                             st.write(f"**{t['poli']}** | {t['dokter']}")
                             st.caption(f"{t['visit_date']}")
-                            if t.get('catatan_medis'): st.info(f"Catatan: {t['catatan_medis']}")
-                            if t['status_pelayanan'] not in ["Selesai"]:
+                            if t.get('catatan_medis'): st.info(f"Medical Notes: {t['catatan_medis']}")
+                            if t['status_pelayanan'] != "Finished":
                                 wait_now = t.get('estimated_wait_time', 0)
-                                st.info(f"⏳ Estimasi Tunggu: {wait_now} Menit")
+                                st.info(f"⏳ Current Wait Estimate: {wait_now} Min")
                         with c3:
                             st.write(f"Status: **{t['status_pelayanan']}**")
-        except: st.error("Gagal load data.")
+        except: st.error("Failed to load records.")
 
-    # =================================================================
-    # 3. MENU SCANNER
-    # =================================================================
+    # 3. QR SCANNER MENU
     elif menu == MENU_SCAN:
-        st.header("📠 Scanner QR")
-        loc_map = {"Pintu Masuk (Check-in)": "arrival", "Masuk Poli (Panggil)": "clinic", "Selesai (Pulang)": "finish"}
-        sel_loc = loc_map[st.radio("Lokasi Scan:", list(loc_map.keys()), horizontal=True)]
+        st.header("📠 QR Scanner Operations")
+        loc_map = {"Entrance (Check-in)": "arrival", "Clinic Entry (Calling)": "clinic", "Finished (Discharged)": "finish"}
+        sel_loc = loc_map[st.radio("Scan Location:", list(loc_map.keys()), horizontal=True)]
         
-        t1, t2 = st.tabs(["Kamera", "Manual"])
+        t1, t2 = st.tabs(["Camera Scan", "Manual Input"])
         
-        # --- PERBAIKAN DI SINI (TAB KAMERA) ---
         with t1:
-            img = st.camera_input("Arahkan ke QR")
+            img = st.camera_input("Aim camera at QR Code")
             if img:
                 code = decode_qr_from_image(img)
-                
-                # JIKA QR TERBACA
                 if code:
                     try: val = str(json.loads(code.replace("'", '"')).get("antrean", code))
                     except: val = str(code)
@@ -293,118 +284,90 @@ else:
                             else: st.error(f"⛔ {d['message']}")
                             time_lib.sleep(2); st.rerun()
                         else: st.error(f"❌ {r.text}")
-                    except Exception as e: st.error(f"Koneksi: {e}")
-                
-                # JIKA QR GAGAL DIBACA (TIDAK JELAS/BURAM)
+                    except Exception as e: st.error(f"Connection error: {e}")
                 else:
-                    st.warning("⚠️ QR Code tidak terbaca. Pastikan pencahayaan cukup atau QR Code tidak buram.")
-                    st.caption("Tips: Coba dekatkan atau jauhkan sedikit kamera dari QR Code.")
+                    st.warning("⚠️ QR Code not readable. Ensure proper lighting and focus.")
 
         with t2:
-            mc = st.text_input("Kode Antrean (Contoh: MATA-001-001)", key="man_code")
-            if st.button("Proses"):
+            mc = st.text_input("Queue Code (e.g., DENT-001-001)", key="man_code")
+            if st.button("Process Entry"):
                 try:
                     r = requests.post(f"{API_URL}/ops/scan-barcode", json={"barcode_data": mc, "location": sel_loc}, headers=headers)
                     d = r.json()
                     if r.status_code == 200:
                         st.success(f"✅ {d['message']}"); time_lib.sleep(1); st.rerun()
                     else: st.error(f"❌ {r.text}")
-                except Exception as e: st.error(f"Koneksi: {e}")
+                except Exception as e: st.error(f"Connection error: {e}")
 
-    # =================================================================
-    # 4. MENU RUANG PERIKSA
-    # =================================================================
-    elif menu == MENU_DOKTER:
-        st.header("👨‍⚕️ Ruang Periksa (Input Medis)")
+    # 4. EXAMINATION ROOM MENU
+    elif menu == MENU_CLINIC:
+        st.header("👨‍⚕️ Examination Room (Medical Input)")
         try:
             res_docs = requests.get(f"{API_URL}/admin/doctors", headers=headers) 
             doc_list = [d['dokter'] for d in res_docs.json()] if res_docs.status_code == 200 else []
-            if not doc_list: st.warning("Gagal memuat list dokter."); st.stop()
-            selected_doc = st.selectbox("Pilih Dokter Bertugas:", doc_list)
-        except: st.error("Koneksi Error"); st.stop()
+            if not doc_list: st.warning("Failed to load doctor list."); st.stop()
+            selected_doc = st.selectbox("Select On-duty Doctor:", doc_list)
+        except: st.error("Connection Error"); st.stop()
 
         st.markdown("---")
         current_p = None
         try:
             q_data = requests.get(f"{API_URL}/monitor/queue-board", headers=headers).json()
-            current_p = next((p for p in q_data if p['dokter'] == selected_doc and p['status_pelayanan'] == "Sedang Dilayani"), None)
+            # Status mapping in English
+            current_p = next((p for p in q_data if p['dokter'] == selected_doc and p['status_pelayanan'] == "Serving"), None)
         except: pass
 
         if current_p:
             with st.container(border=True):
-                st.info(f"🟢 PASIEN AKTIF: **{current_p['nama_pasien']}**")
-                st.write(f"No: {current_p['queue_number']}")
-                catatan = st.text_area("Hasil Diagnosa / Resep:")
-                if st.button("✅ Simpan & Selesaikan", type="primary", use_container_width=True):
-                    requests.put(f"{API_URL}/ops/medical-notes/{current_p['queue_number']}", json={"catatan": catatan}, headers=headers)
+                st.info(f"🟢 ACTIVE PATIENT: **{current_p['nama_pasien']}**")
+                st.write(f"Ticket No: {current_p['queue_number']}")
+                notes = st.text_area("Diagnosis / Prescription Result:")
+                if st.button("✅ Save & Discharge Patient", type="primary", use_container_width=True):
+                    requests.put(f"{API_URL}/ops/medical-notes/{current_p['queue_number']}", json={"catatan": notes}, headers=headers)
                     requests.post(f"{API_URL}/ops/scan-barcode", json={"barcode_data": current_p['queue_number'], "location": "finish"}, headers=headers)
-                    st.success("Tersimpan!"); time_lib.sleep(1); st.rerun()
+                    st.success("Record Saved!"); time_lib.sleep(1); st.rerun()
         else:
-            st.warning(f"Tidak ada pasien di ruangan {selected_doc}.")
-            st.caption("Scan 'Masuk Poli' pada tiket pasien untuk memulai sesi.")
+            st.warning(f"No active patients in {selected_doc}'s room.")
+            st.caption("Scan 'Clinic Entry' on the patient's ticket to start the session.")
 
-    # =================================================================
-    # 5. MENU TV
-    # =================================================================
+    # 5. TV MONITOR MENU
     elif menu == MENU_TV:
-        # Layout Header Khusus TV (Lebih Bersih)
-        st.markdown("<h1 style='text-align: center; color:#007bff; margin-bottom: -20px;'>📺 MONITOR ANTREAN UTAMA</h1>", unsafe_allow_html=True)
+        st.markdown("<h1 style='text-align: center; color:#007bff; margin-bottom: -20px;'>📺 MAIN QUEUE MONITOR</h1>", unsafe_allow_html=True)
         st.write("")
         
-        # --- 1. FILTER POLI ---
-        # Ambil daftar poli dari API untuk isi Dropdown
         try:
             pol_res = requests.get(f"{API_URL}/public/polis", headers=headers)
-            if pol_res.status_code == 200:
-                # Tambahkan opsi 'SEMUA POLI' di paling atas
-                poli_list = ["SEMUA POLI"] + [p['poli'] for p in pol_res.json()]
-            else:
-                poli_list = ["SEMUA POLI"]
-        except: 
-            poli_list = ["SEMUA POLI"]
+            poli_list = ["ALL CLINICS"] + [p['poli'] for p in pol_res.json()] if pol_res.status_code == 200 else ["ALL CLINICS"]
+        except: poli_list = ["ALL CLINICS"]
 
-        # Tampilkan Dropdown Filter
         c_filter, c_time = st.columns([1, 3])
         with c_filter:
-            target_poli = st.selectbox("Tampilkan Antrean Untuk:", poli_list)
+            target_poli = st.selectbox("Display Queue For:", poli_list)
         with c_time:
-            # Tampilkan Jam Digital Sederhana
             st.markdown(f"<h3 style='text-align: right; color: gray;'>🕒 {datetime.now().strftime('%H:%M:%S')}</h3>", unsafe_allow_html=True)
 
         st.markdown("---")
 
-        # --- 2. LOGIKA DATA & FILTERING ---
         try:
             r = requests.get(f"{API_URL}/monitor/queue-board", headers=headers)
-            
             if r.status_code == 200:
                 raw_data = r.json()
                 df = pd.DataFrame(raw_data)
 
                 if not df.empty:
-                    # Ambil kolom penting saja
                     df = df[['queue_number', 'poli', 'dokter', 'status_pelayanan']]
-
-                    # *** INI LOGIKA FILTERNYA ***
-                    if target_poli != "SEMUA POLI":
-                        # Hanya ambil baris yang polinya sama dengan pilihan dropdown
+                    if target_poli != "ALL CLINICS":
                         df = df[df['poli'] == target_poli]
                     
-                    # Cek lagi apakah setelah difilter datanya masih ada?
                     if not df.empty:
-                        # Pisahkan Data: Yang Sedang Dilayani vs Menunggu
-                        df_active = df[df['status_pelayanan'] == 'Sedang Dilayani']
-                        df_wait = df[df['status_pelayanan'] == 'Menunggu']
+                        df_active = df[df['status_pelayanan'] == 'Serving']
+                        df_wait = df[df['status_pelayanan'] == 'Waiting']
 
-                        # --- TAMPILAN LAYAR ---
                         col_active, col_wait = st.columns([2, 1])
-
-                        # KOLOM KIRI: SEDANG DILAYANI (Besar)
                         with col_active:
-                            st.success(f"🔊 SEDANG DIPANGGIL ({len(df_active)})")
+                            st.success(f"🔊 NOW SERVING ({len(df_active)})")
                             if not df_active.empty:
                                 for _, row in df_active.iterrows():
-                                    # Card Design Custom dengan HTML CSS biar besar
                                     st.markdown(f"""
                                     <div style="background-color: #d4edda; padding: 20px; border-radius: 10px; border-left: 10px solid #28a745; margin-bottom: 10px;">
                                         <h1 style="color: #155724; margin:0; font-size: 50px;">{row['queue_number']}</h1>
@@ -412,407 +375,187 @@ else:
                                         <p style="margin:0; font-style: italic;">{row['dokter']}</p>
                                     </div>
                                     """, unsafe_allow_html=True)
-                            else:
-                                st.info("Belum ada panggilan.")
+                            else: st.info("No patients currently being served.")
 
-                        # KOLOM KANAN: MENUNGGU (Tabel)
                         with col_wait:
-                            st.warning(f"🕒 MENUNGGU ({len(df_wait)})")
+                            st.warning(f"🕒 WAITING LIST ({len(df_wait)})")
                             if not df_wait.empty:
-                                # Tampilkan tabel simpel
-                                st.dataframe(
-                                    df_wait[['queue_number', 'poli']], 
-                                    hide_index=True, 
-                                    use_container_width=True
-                                )
-                            else:
-                                st.write("Tidak ada antrean tunggu.")
-                    
-                    else:
-                        st.info(f"Tidak ada antrean aktif untuk **{target_poli}** saat ini.")
-                else:
-                    st.info("Tidak ada antrean aktif di Rumah Sakit.")
-            else:
-                st.error("Gagal terhubung ke server antrean.")
+                                st.dataframe(df_wait[['queue_number', 'poli']], hide_index=True, use_container_width=True)
+                            else: st.write("Waiting list empty.")
+                    else: st.info(f"No active queue for **{target_poli}**.")
+                else: st.info("Hospital queue is currently empty.")
+            else: st.error("Failed to connect to the queue server.")
+        except Exception as e: st.error(f"Connection Error: {e}")
 
-        except Exception as e:
-            st.error(f"Koneksi Error: {e}")
+        time_lib.sleep(10); st.rerun()
 
-        # --- 3. AUTO REFRESH ---
-        # Refresh halaman setiap 10 detik agar data update realtime
-        time_lib.sleep(10)
-        st.rerun()
-
-    # =================================================================
-    # 6. DASHBOARD ADMIN
-    # =================================================================
+    # 6. ADMIN DASHBOARD MENU
     elif menu == MENU_ADMIN:
-        st.header("🛠️ Dashboard Admin")
-        t_doc, t_pol, t_imp = st.tabs(["Kelola Dokter", "Kelola Poli", "Import Data"])
+        st.header("🛠️ Administrative Controls")
+        t_doc, t_pol, t_imp = st.tabs(["Doctor Management", "Clinic Management", "Data Importer"])
         
         try: p_opts = [x['poli'] for x in requests.get(f"{API_URL}/public/polis", headers=headers).json()]
         except: p_opts = []
 
         with t_doc:
-            st.subheader("Manajemen Dokter")
-            
-            # --- LOAD DATA DOKTER & POLI ---
-            try:
-                # Ambil data dokter
-                raw_docs = requests.get(f"{API_URL}/admin/doctors", headers=headers).json()
-                # Ambil data poli (untuk dropdown)
-                raw_polis = requests.get(f"{API_URL}/public/polis", headers=headers).json()
-                p_opts = [p['poli'] for p in raw_polis]
-            except:
-                raw_docs = []
-                p_opts = []
+            st.subheader("Manage Doctors")
+            try: raw_docs = requests.get(f"{API_URL}/admin/doctors", headers=headers).json()
+            except: raw_docs = []
 
-            # Tampilkan Tabel
             if raw_docs:
                 df_doc = pd.DataFrame(raw_docs)[['doctor_id', 'dokter', 'poli', 'doctor_code', 'max_patients', 'practice_start_time', 'practice_end_time']]
                 st.dataframe(df_doc, use_container_width=True, hide_index=True)
-            else:
-                st.info("Belum ada data dokter.")
 
-            # --- 1. TAMBAH DOKTER ---
-            with st.expander("➕ Tambah Dokter Baru"):
+            with st.expander("➕ Add New Doctor"):
                 with st.form("add_doc_form"):
                     c1, c2 = st.columns(2)
-                    dn = c1.text_input("Nama Dokter (Tanpa Gelar)", placeholder="Contoh: Budi Santoso")
-                    dp = c2.selectbox("Poli", p_opts if p_opts else ["Default"])
+                    dn = c1.text_input("Doctor Name (e.g., Budi Santoso)")
+                    dp = c2.selectbox("Clinic", p_opts if p_opts else ["Default"])
+                    ts = st.time_input("Start Time", time(8, 0))
+                    te = st.time_input("End Time", time(16, 0))
+                    dm = st.number_input("Patient Quota", min_value=1, value=20)
                     
-                    c3, c4, c5 = st.columns(3)
-                    ts = c3.time_input("Jam Mulai", time(8, 0))
-                    te = c4.time_input("Jam Selesai", time(16, 0))
-                    dm = c5.number_input("Kuota Pasien", min_value=1, value=20)
-                    
-                    if st.form_submit_button("Simpan Dokter"):
-                        # Validasi sederhana
+                    if st.form_submit_button("Save Doctor"):
                         if dn.strip():
-                            payload = {
-                                "dokter": dn.strip(), # Trim otomatis
-                                "poli": dp,
-                                "practice_start_time": ts.strftime("%H:%M"),
-                                "practice_end_time": te.strftime("%H:%M"),
-                                "max_patients": dm
-                            }
-                            try:
-                                r = requests.post(f"{API_URL}/admin/doctors", json=payload, headers=headers)
-                                if r.status_code == 200:
-                                    st.success("Dokter berhasil ditambahkan!")
-                                    time_lib.sleep(1); st.rerun()
-                                else:
-                                    st.error(f"Gagal: {r.text}")
-                            except Exception as e:
-                                st.error(f"Error: {e}")
-                        else:
-                            st.warning("Nama dokter wajib diisi.")
-
-# --- 2. EDIT DOKTER ---
-            with st.expander("✏️ Edit Dokter"):
-                if raw_docs:
-                    doc_options = {f"{d['doctor_id']} - {d['dokter']}": d for d in raw_docs}
-                    selected_label = st.selectbox("Pilih Dokter untuk Diedit", list(doc_options.keys()))
-                    sel_doc = doc_options[selected_label]
-                    
-                    with st.form(key="edit_doc_form"):
-                        st.caption(f"Mengedit: **{sel_doc['dokter']}**")
-                        st.info("Catatan: Kuota Dokter tidak dapat diubah di sini.") # Info user
-                        
-                        ec1, ec2 = st.columns(2)
-                        raw_name = sel_doc['dokter'].replace("dr. ", "").replace("Dr. ", "")
-                        ed_name = ec1.text_input("Ubah Nama", value=raw_name)
-                        
-                        curr_poli_idx = p_opts.index(sel_doc['poli']) if sel_doc['poli'] in p_opts else 0
-                        ed_poli = ec2.selectbox("Ubah Poli", p_opts, index=curr_poli_idx)
-                        
-                        ec3, ec4 = st.columns(2) # [FIX] Hapus kolom kuota
-                        try:
-                            t_start_obj = datetime.strptime(str(sel_doc['practice_start_time']), "%H:%M:%S").time()
-                            t_end_obj = datetime.strptime(str(sel_doc['practice_end_time']), "%H:%M:%S").time()
-                        except:
-                            t_start_obj = time(8,0); t_end_obj = time(16,0)
-
-                        ed_start = ec3.time_input("Ubah Jam Mulai", value=t_start_obj)
-                        ed_end = ec4.time_input("Ubah Jam Selesai", value=t_end_obj)
-                        
-                        # [HAPUS INPUT KUOTA DARI SINI]
-                        
-                        if st.form_submit_button("Update Perubahan"):
-                            up_payload = {
-                                "dokter": ed_name.strip(),
-                                "poli": ed_poli,
-                                "practice_start_time": ed_start.strftime("%H:%M"),
-                                "practice_end_time": ed_end.strftime("%H:%M")
-                                # Jangan kirim max_patients
-                            }
-                            
-                            r = requests.put(f"{API_URL}/admin/doctors/{sel_doc['doctor_id']}", json=up_payload, headers=headers)
+                            payload = {"dokter": dn.strip(), "poli": dp, "practice_start_time": ts.strftime("%H:%M"), "practice_end_time": te.strftime("%H:%M"), "max_patients": dm}
+                            r = requests.post(f"{API_URL}/admin/doctors", json=payload, headers=headers)
                             if r.status_code == 200:
-                                st.success("Data dokter berhasil diperbarui!")
-                                time_lib.sleep(1); st.rerun()
-                            else:
-                                st.error(f"Gagal Update: {r.json().get('detail', r.text)}")
-                else:
-                    st.info("Tidak ada dokter untuk diedit.")
-
-            # --- 3. HAPUS DOKTER ---
-            with st.expander("❌ Hapus Dokter"):
+                                st.success("Doctor added!"); time_lib.sleep(1); st.rerun()
+            
+            with st.expander("❌ Delete Doctor"):
                 if raw_docs:
                     del_opts = {f"{d['doctor_id']} - {d['dokter']}": d['doctor_id'] for d in raw_docs}
-                    del_label = st.selectbox("Pilih Dokter untuk Dihapus", list(del_opts.keys()))
-                    del_id = del_opts[del_label]
-                    
-                    if st.button("Hapus Permanen", type="primary"):
-                        r = requests.delete(f"{API_URL}/admin/doctors/{del_id}", headers=headers)
+                    del_label = st.selectbox("Select Doctor to Delete", list(del_opts.keys()))
+                    if st.button("Permanently Delete", type="primary"):
+                        r = requests.delete(f"{API_URL}/admin/doctors/{del_opts[del_label]}", headers=headers)
                         if r.status_code == 200:
-                            st.success("Dokter berhasil dihapus."); time_lib.sleep(1); st.rerun()
-                        else:
-                            st.error(f"Gagal menghapus: {r.text}")
-                else:
-                    st.info("Data kosong.")
-        with t_pol:
-            st.subheader("Daftar Poliklinik")
-            try: 
-                # Ambil data poli terbaru
-                pol_data = requests.get(f"{API_URL}/public/polis", headers=headers).json()
-                st.dataframe(pd.DataFrame(pol_data), use_container_width=True, hide_index=True)
-                # List nama poli untuk dropdown
-                p_names = [p['poli'] for p in pol_data]
-            except: 
-                pol_data = []
-                p_names = []
-            
-            # --- 1. TAMBAH POLI ---
-            with st.expander("➕ Tambah Poli"):
-                pn = st.text_input("Nama Poli (Contoh: Poli Mata)")
-                pp = st.text_input("Prefix (Contoh: MATA)")
-                if st.button("Simpan Poli"):
-                    # Trim Input
-                    clean_pn = pn.strip()
-                    clean_pp = pp.strip().upper() # Prefix biasanya huruf besar
-                    
-                    if clean_pn and clean_pp:
-                        r = requests.post(f"{API_URL}/admin/polis", json={"poli": clean_pn, "prefix": clean_pp}, headers=headers)
-                        if r.status_code == 200:
-                            st.success("Berhasil disimpan!"); time_lib.sleep(1); st.rerun()
-                        else:
-                            st.error(f"Gagal: {r.text}")
-                    else:
-                        st.warning("Nama dan Prefix wajib diisi.")
+                            st.success("Deleted!"); time_lib.sleep(1); st.rerun()
 
-            # --- 2. EDIT POLI (YANG HILANG TADI) ---
-            with st.expander("✏️ Edit Poli"):
-                if p_names:
-                    pe = st.selectbox("Pilih Poli yang mau diedit", p_names, key="sel_edit_pol")
-                    
-                    # Cari data prefix lama untuk ditampilkan otomatis
-                    old_prefix = next((item['prefix'] for item in pol_data if item["poli"] == pe), "")
-                    
-                    new_n = st.text_input("Nama Baru", value=pe, key="in_new_pol")
-                    new_p = st.text_input("Prefix Baru", value=old_prefix, key="in_new_pref")
-                    
-                    if st.button("Update Poli", key="btn_up_pol"):
-                        clean_new_n = new_n.strip()
-                        clean_new_p = new_p.strip().upper()
-                        
-                        r = requests.put(f"{API_URL}/admin/polis/{pe}", json={"new_name": clean_new_n, "new_prefix": clean_new_p}, headers=headers)
-                        if r.status_code == 200:
-                            st.success("Berhasil diupdate!"); time_lib.sleep(1); st.rerun()
-                        else:
-                            st.error(f"Gagal: {r.text}")
-                else:
-                    st.info("Belum ada data poli.")
-            
-            # --- 3. HAPUS POLI (YANG HILANG TADI) ---
-            with st.expander("❌ Hapus Poli"):
-                if p_names:
-                    pd_del = st.selectbox("Pilih Poli untuk dihapus", p_names, key="sel_del_pol")
-                    st.warning(f"⚠️ Hati-hati! Menghapus **{pd_del}** akan menghapus semua dokter yang ada di poli tersebut.")
-                    
-                    if st.button("Hapus Poli Permanen", type="primary", key="btn_del_pol"):
-                        r = requests.delete(f"{API_URL}/admin/polis/{pd_del}", headers=headers)
-                        if r.status_code == 200:
-                            st.success("Berhasil dihapus!"); time_lib.sleep(1); st.rerun()
-                        else:
-                            st.error(f"Gagal: {r.text}")
-                else:
-                    st.info("Belum ada data poli.")
+        with t_pol:
+            st.subheader("Clinic Management")
+            try: pol_data = requests.get(f"{API_URL}/public/polis", headers=headers).json()
+            except: pol_data = []
+            if pol_data: st.dataframe(pd.DataFrame(pol_data), use_container_width=True, hide_index=True)
+
+            with st.expander("➕ Add Clinic"):
+                pn = st.text_input("Clinic Name (e.g., Dental Clinic)")
+                pp = st.text_input("Prefix Code (e.g., DENT)")
+                if st.button("Save Clinic"):
+                    r = requests.post(f"{API_URL}/admin/polis", json={"poli": pn.strip(), "prefix": pp.strip().upper()}, headers=headers)
+                    if r.status_code == 200:
+                        st.success("Saved!"); time_lib.sleep(1); st.rerun()
+
         with t_imp:
-            cnt = st.number_input("Jumlah Data", 10)
-            if st.button("Import Data Dummy"):
+            st.subheader("Data Generator")
+            cnt = st.number_input("Number of Records", 10)
+            if st.button("Import Dummy Data"):
                 with st.spinner("Generating..."):
                     r = requests.get(f"{API_URL}/admin/import-random-data", params={"count": cnt}, headers=headers)
-                    st.success(r.json()['message'])
+                    st.success(r.json().get('message', 'Import Finished'))
 
-    # =================================================================
-    # 7. ANALISIS DATA (UPDATE BESAR-BESARAN SESUAI REQUEST)
-    # =================================================================
-    elif menu == MENU_ANALISIS:
-        st.header("📈 Data Science & Business Insights")
-        st.markdown("Dashboard ini mengubah data mentah menjadi wawasan strategis untuk manajemen Rumah Sakit.")
+    # 7. DATA SCIENCE MENU
+    elif menu == MENU_INSIGHTS:
+        st.header("📈 Data Science & Strategic Insights")
+        st.markdown("Turning raw transaction data into operational insights for hospital management.")
         
-        # --- Filter Global ---
         with st.container(border=True):
             col_filter, col_btn = st.columns([3, 1])
             with col_filter:
-                filter_mode = st.selectbox("📅 Pilih Periode Analisis:", ["Semua Waktu", "Hari Ini", "Minggu Ini", "Bulan Ini"])
+                filter_mode = st.selectbox("📅 Analysis Period:", ["All Time", "Today", "This Week", "This Month"])
             with col_btn:
                 st.write(""); st.write("")
-                refresh = st.button("🔄 Terapkan & Refresh", type="primary", use_container_width=True)
+                st.button("🔄 Refresh Data", type="primary", use_container_width=True)
 
-        # Setting Tanggal Filter
         today = datetime.today()
         start_date = None
-        end_date = today
-        if filter_mode == "Hari Ini": start_date = today
-        elif filter_mode == "Minggu Ini": start_date = today - pd.Timedelta(days=today.weekday())
-        elif filter_mode == "Bulan Ini": start_date = today.replace(day=1)
-        else: start_date = None
+        if filter_mode == "Today": start_date = today
+        elif filter_mode == "This Week": start_date = today - pd.Timedelta(days=today.weekday())
+        elif filter_mode == "This Month": start_date = today.replace(day=1)
 
         params = {}
         if start_date: params['start_date'] = str(start_date.date())
-        if end_date: params['end_date'] = str(end_date.date())
+        params['end_date'] = str(today.date())
 
-        # Load Data
-        data_loaded = False
-        d = {}
         try:
-            with st.spinner(f"Menganalisis big data dari database..."):
+            with st.spinner("Analyzing big data from engine..."):
                 r = requests.get(f"{API_URL}/analytics/comprehensive-report", params=params, headers=headers)
                 if r.status_code == 200:
                     d = r.json()
-                    if d.get("status") == "No Data": st.warning(f"Belum ada data transaksi untuk periode {filter_mode}."); st.stop()
-                    else: data_loaded = True
-                else: st.error("Gagal mengambil data dari server.")
-        except Exception as e: st.error(f"Koneksi Error: {e}")
-
-        if data_loaded:
-            # --- KPI UTAMA (ATAS) ---
-            k1, k2, k3, k4 = st.columns(4)
-            with k1: st.metric("Total Pasien", d['total_patients'], help="Total volume pasien yang terdaftar.")
-            with k2: 
-                peak = str(max(d['peak_hours'], key=d['peak_hours'].get)) + ":00" if d['peak_hours'] else "-"
-                st.metric("Jam Tersibuk", peak, help="Jam dimana kedatangan pasien paling tinggi.")
-            with k3: st.metric("Ghosting Rate", f"{d['ghost_rate']}%", help="% Pasien daftar tapi tidak datang.")
-            with k4: st.metric("Korelasi (Vol vs Speed)", d['correlation'], help="Positif: Makin ramai makin lambat. Negatif: Makin ramai makin ngebut.")
-
-            st.markdown("---")
-
-            # --- 1. VOLUME PASIEN (BAR CHART ORANYE) ---
-            st.subheader("1. Analisis Volume Pasien (Patient Volume Analysis)")
-            st.caption("Mengidentifikasi poli dengan beban kerja tertinggi.")
-            
-            df_vol = pd.DataFrame(list(d['poli_volume'].items()), columns=['Poli', 'Jumlah'])
-            if not df_vol.empty:
-                fig_vol = px.bar(
-                    df_vol, x='Poli', y='Jumlah', 
-                    color_discrete_sequence=['#FF8C00'], # ORANYE sesuai request
-                    text='Jumlah',
-                    title="Total Pasien per Poliklinik"
-                )
-                fig_vol.update_layout(xaxis_title="Nama Poli", yaxis_title="Jumlah Pasien")
-                st.plotly_chart(fig_vol, use_container_width=True)
-            else: st.info("Tidak ada data volume.")
-
-            c_left, c_right = st.columns(2)
-
-            # --- 2. EFISIENSI WAKTU (GROUPED BAR MERAH/HIJAU) ---
-            with c_left:
-                st.subheader("2. Efisiensi Waktu (Wait vs Service)")
-                st.caption("Membandingkan waktu tunggu vs waktu layanan.")
-                
-                # Transform Data Nested ke Flat DataFrame untuk Plotly Grouped Bar
-                eff_data = []
-                for poli, metrics in d['poli_efficiency'].items():
-                    eff_data.append({'Poli': poli, 'Waktu (Menit)': metrics['wait_minutes'], 'Jenis': 'Menunggu (Merah)'})
-                    eff_data.append({'Poli': poli, 'Waktu (Menit)': metrics['service_minutes'], 'Jenis': 'Diperiksa (Hijau)'})
-                
-                df_eff = pd.DataFrame(eff_data)
-                if not df_eff.empty:
-                    # Warna Custom: Merah untuk Tunggu, Hijau untuk Periksa
-                    color_map = {'Menunggu (Merah)': '#FF4B4B', 'Diperiksa (Hijau)': '#00CC96'}
-                    fig_eff = px.bar(
-                        df_eff, x='Poli', y='Waktu (Menit)', color='Jenis', barmode='group',
-                        color_discrete_map=color_map,
-                        title="Rata-rata Waktu (Menit)"
-                    )
-                    st.plotly_chart(fig_eff, use_container_width=True)
-                else: st.info("Data waktu belum cukup.")
-
-            # --- 3. TREND JAM SIBUK (AREA CHART) ---
-            with c_right:
-                st.subheader("3. Tren Jam Sibuk (Peak Hour Analysis)")
-                st.caption("Pola kedatangan pasien berdasarkan jam.")
-                
-                df_peak = pd.DataFrame(list(d['peak_hours'].items()), columns=['Jam', 'Jumlah'])
-                df_peak['Jam'] = df_peak['Jam'].astype(str) + ":00" # Format jam
-                
-                if not df_peak.empty:
-                    fig_peak = px.area(
-                        df_peak, x='Jam', y='Jumlah',
-                        markers=True, title="Heatmap Kedatangan Harian"
-                    )
-                    st.plotly_chart(fig_peak, use_container_width=True)
-                else: st.info("Data jam belum cukup.")
-
-            st.markdown("---")
-            c_prod, c_ghost = st.columns(2)
-
-            # --- 4. PRODUKTIVITAS DOKTER (HORIZONTAL BAR) ---
-            with c_prod:
-                st.subheader("4. Produktivitas Dokter (Throughput)")
-                st.caption("Kecepatan layanan (Pasien per Jam).")
-                
-                df_doc = pd.DataFrame(list(d['doctor_throughput'].items()), columns=['Dokter', 'Speed (Pasien/Jam)'])
-                if not df_doc.empty:
-                    fig_doc = px.bar(
-                        df_doc, y='Dokter', x='Speed (Pasien/Jam)', orientation='h',
-                        color='Speed (Pasien/Jam)', color_continuous_scale='Viridis',
-                        title="Efektivitas Staff Medis"
-                    )
-                    st.plotly_chart(fig_doc, use_container_width=True)
-                else: st.info("Belum ada data penyelesaian dokter.")
-
-            # --- 5. GHOSTING RATE (GAUGE CHART) ---
-            with c_ghost:
-                st.subheader("5. Tingkat Ketidakhadiran (No-Show)")
-                st.caption("Pasien yang daftar tapi tidak datang.")
-                
-                fig_gauge = go.Figure(go.Indicator(
-                    mode = "gauge+number",
-                    value = d['ghost_rate'],
-                    title = {'text': "Ghosting Rate (%)"},
-                    gauge = {
-                        'axis': {'range': [None, 100]},
-                        'bar': {'color': "darkred"},
-                        'steps': [
-                            {'range': [0, 20], 'color': "lightgreen"},
-                            {'range': [20, 50], 'color': "yellow"},
-                            {'range': [50, 100], 'color': "salmon"}],
-                    }
-                ))
-                st.plotly_chart(fig_gauge, use_container_width=True)
-
-            # --- 6. KORELASI (SCATTER PLOT SIMPLE) ---
-            st.subheader("6. Analisis Korelasi (Kepadatan vs Kecepatan)")
-            st.info(f"Nilai Korelasi Pearson: **{d['correlation']}**")
-
-            # --- 7. TEXT MINING (WORD CLOUD) ---
-            st.subheader("7. Penambangan Teks Diagnosa (Word Cloud)")
-            st.caption("Kata kunci penyakit yang paling sering muncul di catatan medis.")
-            
-            text_data = d.get('text_mining', '')
-            if len(text_data) > 5:
-                try:
-                    # Buat WordCloud
-                    wc = WordCloud(width=1000, height=400, background_color='white', colormap='Reds').generate(text_data)
+                    if d.get("status") == "No Data": st.warning(f"No records found for {filter_mode}."); st.stop()
                     
-                    # Tampilkan pakai Matplotlib
-                    fig_wc, ax = plt.subplots(figsize=(12, 4))
-                    ax.imshow(wc, interpolation='bilinear')
-                    ax.axis("off")
-                    st.pyplot(fig_wc)
-                except Exception as e: st.error(f"Gagal generate WordCloud: {e}")
-            else:
-                st.info("Data teks diagnosa belum cukup untuk dianalisis.")
+                    # --- KPI METRICS ---
+                    k1, k2, k3, k4 = st.columns(4)
+                    k1.metric("Total Patient Volume", d['total_patients'])
+                    peak = str(max(d['peak_hours'], key=d['peak_hours'].get)) + ":00" if d['peak_hours'] else "-"
+                    k2.metric("Peak Arrival Hour", peak)
+                    k3.metric("Ghosting Rate", f"{d['ghost_rate']}%", help="Percentage of no-shows.")
+                    k4.metric("Load vs Speed Correlation", d['correlation'])
+
+                    st.markdown("---")
+
+                    # --- 1. VOLUME ANALYSIS ---
+                    st.subheader("1. Patient Distribution by Clinic")
+                    df_vol = pd.DataFrame(list(d['poli_volume'].items()), columns=['Clinic', 'Total'])
+                    if not df_vol.empty:
+                        fig_vol = px.bar(df_vol, x='Clinic', y='Total', color_discrete_sequence=['#FF8C00'], title="Volume per Clinic")
+                        st.plotly_chart(fig_vol, use_container_width=True)
+
+                    c_left, c_right = st.columns(2)
+
+                    # --- 2. TIME EFFICIENCY ---
+                    with c_left:
+                        st.subheader("2. Time Efficiency (Wait vs Serving)")
+                        eff_data = []
+                        for p, m in d['poli_efficiency'].items():
+                            eff_data.append({'Clinic': p, 'Minutes': m['wait_minutes'], 'Type': 'Waiting (Red)'})
+                            eff_data.append({'Clinic': p, 'Minutes': m['service_minutes'], 'Type': 'Serving (Green)'})
+                        df_eff = pd.DataFrame(eff_data)
+                        if not df_eff.empty:
+                            fig_eff = px.bar(df_eff, x='Clinic', y='Minutes', color='Type', barmode='group',
+                                            color_discrete_map={'Waiting (Red)': '#FF4B4B', 'Serving (Green)': '#00CC96'},
+                                            title="Avg Duration (Min)")
+                            st.plotly_chart(fig_eff, use_container_width=True)
+
+                    # --- 3. PEAK HOUR TREND ---
+                    with c_right:
+                        st.subheader("3. Daily Peak Hour Trends")
+                        df_peak = pd.DataFrame(list(d['peak_hours'].items()), columns=['Hour', 'Total'])
+                        df_peak['Hour'] = df_peak['Hour'].astype(str) + ":00"
+                        if not df_peak.empty:
+                            st.plotly_chart(px.area(df_peak, x='Hour', y='Total', markers=True, title="Hourly Heatmap"), use_container_width=True)
+
+                    st.markdown("---")
+                    c_prod, c_ghost = st.columns(2)
+
+                    # --- 4. DOCTOR PRODUCTIVITY ---
+                    with c_prod:
+                        st.subheader("4. Doctor Throughput (Speed)")
+                        df_doc_t = pd.DataFrame(list(d['doctor_throughput'].items()), columns=['Doctor', 'Patients/Hour'])
+                        if not df_doc_t.empty:
+                            st.plotly_chart(px.bar(df_doc_t, y='Doctor', x='Patients/Hour', orientation='h', 
+                                                   color='Patients/Hour', color_continuous_scale='Viridis'), use_container_width=True)
+
+                    # --- 5. GHOSTING RATE GAUGE ---
+                    with c_ghost:
+                        st.subheader("5. No-Show Rate Analysis")
+                        fig_gauge = go.Figure(go.Indicator(
+                            mode = "gauge+number", value = d['ghost_rate'], title = {'text': "Ghosting Rate %"},
+                            gauge = {'axis': {'range': [0, 100]}, 'bar': {'color': "darkred"},
+                                     'steps': [{'range': [0, 20], 'color': "lightgreen"}, {'range': [20, 50], 'color': "yellow"}, {'range': [50, 100], 'color': "salmon"}]}
+                        ))
+                        st.plotly_chart(fig_gauge, use_container_width=True)
+
+                    # --- 7. WORD CLOUD ---
+                    st.subheader("7. Medical Diagnosis Text Mining (Word Cloud)")
+                    text_data = d.get('text_mining', '')
+                    if len(text_data) > 5:
+                        try:
+                            wc = WordCloud(width=1000, height=400, background_color='white', colormap='Reds').generate(text_data)
+                            fig_wc, ax = plt.subplots(figsize=(12, 4))
+                            ax.imshow(wc, interpolation='bilinear'); ax.axis("off")
+                            st.pyplot(fig_wc)
+                        except Exception as e: st.error(f"WordCloud Error: {e}")
+                    else: st.info("Insufficient diagnosis text data for mining.")
+
+                else: st.error("Failed to fetch analytics from engine.")
+        except Exception as e: st.error(f"Analytics Pipeline Error: {e}")
