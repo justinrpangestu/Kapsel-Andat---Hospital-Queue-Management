@@ -87,7 +87,7 @@ class MedicalNoteUpdate(BaseModel):
     )
 
 class TicketCreate(BaseModel):
-    poli: str
+    clinic: str
     doctor_id: int
     username_pasien: Optional[str] = None
     visit_date: date
@@ -122,11 +122,11 @@ class Token(BaseModel):
 
 class PelayananSchema(BaseModel):
     id: int
-    nama_pasien: str
-    dokter: str
-    poli: str
+    patient_name: str
+    doctor: str
+    clinic: str
     visit_date: date
-    status_pelayanan: str
+    service_status: str
     queue_number: str
     queue_sequence: int
     checkin_time: Optional[datetime] = None

@@ -21,15 +21,14 @@ Base = declarative_base()
 
 class TabelPoli(Base):
     __tablename__ = "tabel_poli_normal"
-    poli = Column(String(100), primary_key=True, index=True)
-    prefix = Column(String(10), unique=True) 
-    dokters = relationship("TabelDokter", back_populates="poli_rel")
+    clinic = Column(String(100), primary_key=True, index=True)
+    prefix = Column(String(10), unique=True)
 
 class TabelDokter(Base):
     __tablename__ = "tabel_dokter_normal"
     doctor_id = Column(Integer, primary_key=True, index=True) 
-    dokter = Column(String(100))
-    poli = Column(String(100), ForeignKey("tabel_poli_normal.poli"))
+    doctor = Column(String(100))
+    clinic = Column(String(100), ForeignKey("tabel_poli_normal.clinic"))
     practice_start_time = Column(Time)
     practice_end_time = Column(Time)
     doctor_code = Column(String(50))
@@ -41,15 +40,15 @@ class TabelPelayanan(Base):
     __tablename__ = "tabel_pelayanan_normal"
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     username = Column(String(50), index=True)
-    nama_pasien = Column(String(100))
-    poli = Column(String(100))
-    dokter = Column(String(100))
+    patient_name = Column(String(100))
+    clinic = Column(String(100))
+    doctor = Column(String(100))
     doctor_id_ref = Column(Integer, ForeignKey("tabel_dokter_normal.doctor_id"))
     visit_date = Column(Date)
     checkin_time = Column(DateTime, nullable=True)
     clinic_entry_time = Column(DateTime, nullable=True)
     completion_time = Column(DateTime, nullable=True)
-    status_pelayanan = Column(String(50))
+    service_status = Column(String(50))
     queue_number = Column(String(50))
     queue_sequence = Column(Integer)
     catatan_medis = Column(String(255), nullable=True)
@@ -70,7 +69,7 @@ class TabelGabungan(Base):
     checkin_time = Column(DateTime, nullable=True)
     clinic_entry_time = Column(DateTime, nullable=True)
     completion_time = Column(DateTime, nullable=True)
-    status_pelayanan = Column(String(50))
+    service_status = Column(String(50))
     queue_number = Column(String(50))
     queue_sequence = Column(Integer)
     catatan_medis = Column(String(255), nullable=True)

@@ -206,29 +206,19 @@ else:
                         d = r.json()
                         st.balloons()
                         with st.container(border=True):
-                            st.markdown("### 🎫 Queue Ticket Generated Successfully")
+                            st.markdown("### 🎫 Queue Ticket Created")
                             cq, ct = st.columns([1, 2])
+                            with ct:
+                                st.subheader(f"No. {d['queue_number']}")
+                                st.write(f"**{d['clinic']}** | {d['doctor']}") # English Keys
+                                st.write(f"📅 Date: {d['visit_date']}")
+                                st.write(f"🕒 Schedule: {d['doctor_schedule']}")
+                                st.success("Registration confirmed.")
                             with cq:
                                 buf = io.BytesIO()
                                 generate_qr({"id": d['id'], "antrean": d['queue_number']}).save(buf, format="PNG")
                                 st.image(buf, use_container_width=True)
-                            with ct:
-                                st.subheader(f"No. {d['queue_number']}")
-                                st.write(f"**{d['poli']}** - {d['dokter']}")
-                                st.write(f"📅 {d['visit_date']}")
-                                # Dynamic Wait Time Display
-                                wait_time = d.get('estimated_wait_time', 0)
-                                tgl_skrg = date.today()
-                                tgl_kunjungan = datetime.strptime(str(d['visit_date']), "%Y-%m-%d").date()
-
-                                if wait_time > 0:
-                                    st.warning(f"⏳ Estimated Wait: **{wait_time} Minutes**")
-                                else:
-                                    if tgl_kunjungan == tgl_skrg:
-                                        st.success("🟢 You are next in line! Please be ready.")
-                                    else:
-                                        st.info(f"✨ You are the first patient for {d['visit_date']}.")
-                                st.info("Please print or take a photo of this QR code.")
+                            
                         st.session_state['selected_doc'] = None
                     else: st.error(f"⛔ Booking Failed! Error: {r.json().get('detail', r.text)}")
                 except Exception as e: st.error(f"System Error: {str(e)}")
@@ -249,14 +239,11 @@ else:
                             st.image(buf)
                         with c2:
                             st.subheader(t['queue_number'])
-                            st.write(f"**{t['poli']}** | {t['dokter']}")
+                            st.write(f"**{t['clinic']}** | {t['doctor']}")
                             st.caption(f"{t['visit_date']}")
                             if t.get('catatan_medis'): st.info(f"Medical Notes: {t['catatan_medis']}")
-                            if t['status_pelayanan'] != "Finished":
-                                wait_now = t.get('estimated_wait_time', 0)
-                                st.info(f"⏳ Current Wait Estimate: {wait_now} Min")
                         with c3:
-                            st.write(f"Status: **{t['status_pelayanan']}**")
+                            st.write(f"Status: **{t['service_status']}**")
         except: st.error("Failed to load records.")
 
     # 3. QR SCANNER MENU

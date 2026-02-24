@@ -1,5 +1,8 @@
 # main.py - FINAL CLEAN VERSION (ENGLISH)
 
+from pydoc import doc
+
+from annotated_types import doc
 from fastapi import FastAPI, Depends, HTTPException, status, APIRouter
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
@@ -387,10 +390,7 @@ def submit_reg(p: schemas.TicketCreate, db: Session = Depends(get_db), current_u
     if q_date < date.today(): raise HTTPException(400, "Cannot register for past dates.")
 
     doc = db.query(storage.TabelDokter).filter(storage.TabelDokter.doctor_id == p.doctor_id).first()
-    if not doc or doc.poli != p.poli: raise HTTPException(400, "Doctor/Clinic association error.")
-
-    if q_date == date.today() and datetime.now().time() > doc.practice_end_time:
-         raise HTTPException(400, detail="Registration Closed! Doctor's practice hours have ended.")
+    if not doc or doc.clinic != p.clinic: raise HTTPException(400, "Doctor/Clinic association error.")
 
     # 3. QUOTA LOGIC
     current_count = db.query(storage.TabelPelayanan).filter(storage.TabelPelayanan.doctor_id_ref == p.doctor_id, storage.TabelPelayanan.visit_date == q_date).count()
@@ -399,37 +399,44 @@ def submit_reg(p: schemas.TicketCreate, db: Session = Depends(get_db), current_u
     if db.query(storage.TabelPelayanan).filter(storage.TabelPelayanan.username == target_username, storage.TabelPelayanan.visit_date == q_date).first():
         raise HTTPException(400, "Patient already has a ticket for this date.")
 
-    # 4. SEQUENCE & TRANSACTION
+    # 4. SEQUENCE GENERATION
     seq = current_count + 1
-    poli_data = db.query(storage.TabelPoli).filter(storage.TabelPoli.poli == p.poli).first()
+    poli_data = db.query(storage.TabelPoli).filter(storage.TabelPoli.clinic == p.clinic).first()
     try: suf = doc.doctor_code.split('-')[-1]
     except: suf = "001"
     q_str = f"{poli_data.prefix}-{suf}-{seq:03d}"
 
+    # 5. ATOMIC DATA SAVE
     try:
-        with db.begin():
-            new_t = storage.TabelPelayanan(
-                username=target_username, nama_pasien=final_nama, poli=p.poli,
-                dokter=doc.dokter, doctor_id_ref=doc.doctor_id, visit_date=q_date,
-                status_pelayanan="Registered", queue_number=q_str, queue_sequence=seq,
-                status_member="Member"
-            )
-            db.add(new_t)
-            
-            db.add(storage.TabelGabungan(
-                username=target_username, nama_pasien=final_nama, poli=p.poli, prefix_poli=poli_data.prefix,
-                dokter=doc.dokter, doctor_code=doc.doctor_code, doctor_id=doc.doctor_id, visit_date=q_date,
-                status_pelayanan="Registered", queue_number=q_str, queue_sequence=seq, status_member="Member"
-            ))
+        # Create records
+        new_t = storage.TabelPelayanan(
+            username=target_username, nama_pasien=final_nama, poli=p.poli,
+            dokter=doc.dokter, doctor_id_ref=doc.doctor_id, visit_date=q_date,
+            service_status="Registered", queue_number=q_str, queue_sequence=seq,
+            status_member="Member"
+        )
+        db.add(new_t)
+        
+        # Manually commit the session
+        db.commit()
+        db.refresh(new_t)
 
-        # 5. DYNAMIC RESPONSE
+        # 6. DYNAMIC RESPONSE
         wait_min = get_estimated_wait_time(db, doc.doctor_id, seq, q_date) if q_date == date.today() else 0
         return {
-            "id": new_t.id, "queue_number": q_str, "visit_date": new_t.visit_date,
-            "doctor_schedule": f"{str(doc.practice_start_time)[:5]} - {str(doc.practice_end_time)[:5]}",
-            "estimated_wait_time": wait_min, "sisa_kuota": doc.max_patients - seq
+            "id": new_t.id,
+            "queue_number": new_t.queue_number,
+            "patient_name": new_t.patient_name,
+            "clinic": new_t.clinic,
+            "doctor": new_t.doctor,
+            "service_status": new_t.service_status,
+            "visit_date": str(new_t.visit_date),
+            "doctor_schedule": f"{str(doc.practice_start_time)[:5]} - {str(doc.practice_end_time)[:5]}"
         }
-    except Exception as e: raise HTTPException(500, f"Save failed: {str(e)}")
+
+    except Exception as e:
+        db.rollback() # Rollback if either save fails
+        raise HTTPException(500, f"Save failed: {str(e)}")
 
 @router_public.get("/my-history", response_model=List[schemas.PelayananSchema])
 def get_history(db: Session = Depends(get_db), current_user: dict = Depends(security.get_current_user_token)):

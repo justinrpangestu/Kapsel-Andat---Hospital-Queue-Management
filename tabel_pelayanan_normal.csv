@@ -1,4 +1,4 @@
-nama_pasien,poli,dokter,visit_date,checkin_time,clinic_entry_time,completion_time,status_pelayanan,queue_sequence,queue_number
+patient_name,clinic,doctor,visit_date,checkin_time,clinic_entry_time,completion_time,service_status,queue_sequence,queue_number
 Pasien 319,Poli Gigi,Dr. Justin,11/27/2023,8:00:00,8:06:00,8:14:00,Selesai,1,B-001-001
 Pasien 677,Poli Gigi,Dr. Justin,11/27/2023,8:00:00,8:05:00,8:33:00,Selesai,2,B-001-002
 Pasien 705,Poli Gigi,Dr. Riel,11/27/2023,8:00:00,8:03:00,8:35:00,Selesai,3,B-002-003
