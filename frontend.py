@@ -17,12 +17,11 @@ import matplotlib.pyplot as plt
 API_URL = "http://127.0.0.1:8000"
 st.set_page_config(page_title="Smart Hospital System", layout="wide", page_icon="🏥")
 
-# --- CUSTOM CSS (Modern UI) ---
+# --- CUSTOM CSS ---
 st.markdown("""
 <style>
     div.stButton > button:first-child { border-radius: 8px; font-weight: bold; }
     div[data-testid="stMetricValue"] { font-size: 28px; color: #007bff; font-weight: bold; }
-    .reportview-container .main .block-container { max-width: 1200px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -30,13 +29,7 @@ st.markdown("""
 # 0. SESSION SETUP
 # =================================================================
 if 'token' not in st.session_state:
-    st.session_state.update({
-        'token': None, 
-        'role': None, 
-        'nama_user': None, 
-        'status_member': None, 
-        'selected_doc': None
-    })
+    st.session_state.update({'token': None, 'role': None, 'nama_user': None, 'status_member': None, 'selected_doc': None})
 
 # --- HELPERS ---
 def generate_qr(data):
@@ -58,7 +51,7 @@ def decode_qr_from_image(image_buffer):
 # A. LOGIN / REGISTER LOGIC
 # =================================================================
 if st.session_state['token'] is None:
-    st.markdown("<h1 style='text-align: center; color: #2E86C1;'>🏥 Smart Hospital Management System</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center; color: #2E86C1;'>🏥 Smart Hospital System</h1>", unsafe_allow_html=True)
     st.divider()
     c1, c2 = st.columns(2)
     
@@ -72,13 +65,11 @@ if st.session_state['token'] is None:
                 if r.status_code == 200:
                     d = r.json()
                     st.session_state.update({
-                        'token': d['access_token'], 
-                        'role': d['role'], 
-                        'nama_user': d['nama'], 
-                        'status_member': d.get('status_member') 
+                        'token': d['access_token'], 'role': d['role'], 
+                        'nama_user': d['nama'], 'status_member': d.get('status_member') 
                     })
                     st.rerun()
-                else: st.error(r.json().get('detail', 'Login Failed: Check Credentials'))
+                else: st.error(r.json().get('detail', 'Login Failed'))
             except Exception as e: st.error(f"Connection Error: {e}")
 
     with c2:
@@ -86,51 +77,40 @@ if st.session_state['token'] is None:
         rn = st.text_input("Full Name", key="rn")
         ru = st.text_input("Username", key="ru")
         rp = st.text_input("Password", type="password", key="rp")
-        
         if st.button("Create Account", use_container_width=True):
             if rn and ru and rp:
                 try:
-                    payload = {
-                        "username": ru.strip(), 
-                        "password": rp.strip(), 
-                        "nama_lengkap": rn.strip()
-                    }
+                    payload = {"username": ru.strip(), "password": rp.strip(), "nama_lengkap": rn.strip()}
                     r = requests.post(f"{API_URL}/auth/register", json=payload)
-                    
                     if r.status_code == 200:
                         d = r.json()
                         st.session_state.update({
-                            'token': d['access_token'], 
-                            'role': d['role'], 
-                            'nama_user': d['nama'], 
-                            'status_member': "New Patient"
+                            'token': d['access_token'], 'role': d['role'], 
+                            'nama_user': d['nama'], 'status_member': "New Patient"
                         })
-                        st.success("Account created successfully! Redirecting...")
+                        st.success("Success! Redirecting...")
                         time_lib.sleep(1); st.rerun()
-                    else: 
-                        st.error(f"Registration Failed: {r.json().get('detail', 'Unknown Error')}")
+                    else: st.error(f"Failed: {r.json().get('detail', 'Error')}")
                 except Exception as e: st.error(f"Connection Error: {str(e)}")
-            else:
-                st.warning("Please fill in all fields.")
 
 # =================================================================
-# B. MAIN APPLICATION (AUTHENTICATED)
+# B. MAIN APPLICATION
 # =================================================================
 else:
     role = st.session_state['role']
+    headers = {"Authorization": f"Bearer {st.session_state['token']}"}
     
     # --- SIDEBAR ---
     st.sidebar.image("https://cdn-icons-png.flaticon.com/512/3135/3135715.png", width=80)
     st.sidebar.write(f"Welcome, **{st.session_state['nama_user']}**")
     if st.session_state.get('status_member'):
         st.sidebar.info(f"Status: **{st.session_state['status_member']}**")
-    st.sidebar.caption(f"Access Role: {role.upper()}")
-    
+    st.sidebar.caption(f"Role: {role.upper()}")
     if st.sidebar.button("Log Out"):
         st.session_state.clear(); st.rerun()
     st.sidebar.markdown("---")
 
-    # --- MENU NAVIGATION ---
+    # --- MENU DEFINITIONS ---
     MENU_BOOK = "📝 Registration"
     MENU_HISTORY = "📂 History & Tickets"
     MENU_SCAN = "📠 QR Scanner"
@@ -141,88 +121,106 @@ else:
 
     menu_opts = []
     if role == "admin": menu_opts = [MENU_BOOK, MENU_SCAN, MENU_CLINIC, MENU_TV, MENU_ADMIN, MENU_INSIGHTS]
-    elif role == "perawat": menu_opts = [MENU_SCAN, MENU_CLINIC]
-    elif role == "administrasi": menu_opts = [MENU_BOOK, MENU_SCAN, MENU_TV]
-    elif role == "pasien": menu_opts = [MENU_BOOK, MENU_HISTORY, MENU_TV]
+    elif role in ["nurse", "reception"]: menu_opts = [MENU_BOOK, MENU_SCAN, MENU_CLINIC, MENU_TV]
+    elif role == "patient": menu_opts = [MENU_BOOK, MENU_HISTORY, MENU_TV]
     else: menu_opts = [MENU_TV]
 
     menu = st.sidebar.radio("Navigation", menu_opts)
-    headers = {"Authorization": f"Bearer {st.session_state['token']}"}
 
     # 1. REGISTRATION MENU
     if menu == MENU_BOOK:
         st.header("📋 Book Appointment")
+        
+        # Load Clinic Data
         try: 
-            p_map = {p['poli']: p for p in sorted(requests.get(f"{API_URL}/public/polis", headers=headers).json(), key=lambda x: x['poli'])}
+            res = requests.get(f"{API_URL}/public/polis", headers=headers)
+            raw_polis = res.json() if res.status_code == 200 else []
+            p_map = {p['clinic']: p for p in sorted(raw_polis, key=lambda x: x['clinic'])}
         except: p_map = {}
 
         c1, c2 = st.columns(2)
-        nm = ""
-        target_user_input = None 
         
-        if role in ['admin', 'administrasi', 'perawat']:
-            nm = c1.text_input("Patient Name (As per ID)")
-            target_user_input = c1.text_input("Patient Account Username", help="Optional")
+        # Patient Identification
+        if role in ['admin', 'nurse', 'reception']:
+            patient_nm = c1.text_input("Patient Name (As per ID)", key="reg_nm")
+            target_uname = c1.text_input("Patient Account Username (Optional)", key="reg_un")
         else:
-            nm = c1.text_input("Patient Name", value=st.session_state['nama_user'], disabled=True)
+            patient_nm = c1.text_input("Patient Name", value=st.session_state['nama_user'], disabled=True, key="reg_nm_lock")
+            target_uname = None
         
-        pl = c1.selectbox("Target Clinic", list(p_map.keys()) if p_map else [], index=None, placeholder="Choose Clinic...")
-        tg = c2.date_input("Visit Date", min_value=date.today())
+        sel_clinic = c1.selectbox("Target Clinic", list(p_map.keys()) if p_map else [], index=None, placeholder="Choose Clinic...", key="reg_cl")
+        sel_date = c2.date_input("Visit Date", min_value=date.today(), key="reg_dt")
 
-        if pl:
-            st.markdown("### Select Doctor")
+        # Doctor Selection
+        if sel_clinic:
+            st.markdown("---")
+            st.subheader(f"Available Doctors at {sel_clinic}")
             try:
-                docs = requests.get(f"{API_URL}/public/available-doctors", params={"poli_name": pl}, headers=headers).json()
-                if not docs: st.warning("No doctors available for this clinic.")
+                doc_res = requests.get(f"{API_URL}/public/available-doctors", params={"clinic_name": sel_clinic}, headers=headers)
+                docs = doc_res.json() if doc_res.status_code == 200 else []
+                if not docs: st.warning("No doctors available.")
                 else:
                     cols = st.columns(3)
                     for i, d in enumerate(docs):
                         with cols[i % 3]:
                             with st.container(border=True):
-                                st.subheader(d['dokter'])
+                                st.markdown(f"#### {d['doctor']}")
                                 st.info(f"🕒 {str(d['practice_start_time'])[:5]} - {str(d['practice_end_time'])[:5]}")
-                                # Dynamic Quota Display
-                                st.caption(f"Remaining Slots: {d.get('sisa_kuota', d['max_patients'])}")
-                                if st.button("Select", key=d['doctor_id'], use_container_width=True):
+                                if st.button("Select Doctor", key=f"sel_{d['doctor_id']}", use_container_width=True):
                                     st.session_state['selected_doc'] = d
                                     st.rerun()
             except: pass
-        
-        if st.session_state['selected_doc']:
-            doc = st.session_state['selected_doc']
-            st.success(f"Selected: **{doc['dokter']}**")
-            
-            if st.button("✅ Confirm Booking", type="primary", use_container_width=True):
-                clean_nm = nm.strip() if nm else ""
-                if not clean_nm: 
-                    st.error("⚠️ Patient name is REQUIRED!"); st.stop()
-                
-                payload = {"nama_pasien": clean_nm, "poli": pl, "doctor_id": doc['doctor_id'], "visit_date": str(tg)}
-                if target_user_input: payload["username_pasien"] = target_user_input.strip()
-                
-                try:
-                    r = requests.post(f"{API_URL}/public/submit", json=payload, headers=headers)
-                    if r.status_code == 200:
-                        d = r.json()
-                        st.balloons()
-                        with st.container(border=True):
-                            st.markdown("### 🎫 Queue Ticket Created")
-                            cq, ct = st.columns([1, 2])
-                            with ct:
-                                st.subheader(f"No. {d['queue_number']}")
-                                st.write(f"**{d['clinic']}** | {d['doctor']}") # English Keys
-                                st.write(f"📅 Date: {d['visit_date']}")
-                                st.write(f"🕒 Schedule: {d['doctor_schedule']}")
-                                st.success("Registration confirmed.")
-                            with cq:
-                                buf = io.BytesIO()
-                                generate_qr({"id": d['id'], "antrean": d['queue_number']}).save(buf, format="PNG")
-                                st.image(buf, use_container_width=True)
-                            
-                        st.session_state['selected_doc'] = None
-                    else: st.error(f"⛔ Booking Failed! Error: {r.json().get('detail', r.text)}")
-                except Exception as e: st.error(f"System Error: {str(e)}")
 
+        # Submission Logic
+        if st.session_state.get('selected_doc'):
+            sel = st.session_state['selected_doc']
+            st.success(f"Selected: **{sel['doctor']}**")
+            
+            if st.button("✅ Confirm Booking", type="primary", use_container_width=True, key="btn_sub"):
+                if not patient_nm.strip(): st.error("Patient name is required.")
+                else:
+                    payload = {"clinic": sel_clinic, "doctor_id": sel['doctor_id'], "visit_date": str(sel_date)}
+                    if target_uname: payload["username_pasien"] = target_uname.strip()
+                    
+                    try:
+                        r = requests.post(f"{API_URL}/public/submit", json=payload, headers=headers)
+                        if r.status_code == 200:
+                            d = r.json()
+                            st.balloons()
+                            with st.container(border=True):
+                                st.markdown("### 🎫 Ticket Generated Successfully")
+                                t1, t2 = st.columns([1, 2])
+                                with t1:
+                                    buf = io.BytesIO(); generate_qr({"id": d['id'], "antrean": d['queue_number']}).save(buf, format="PNG")
+                                    st.image(buf, use_container_width=True)
+                                with t2:
+                                    st.subheader(f"No. {d['queue_number']}")
+                                    st.write(f"🏢 **Clinic:** {d['clinic']}\n👨‍⚕️ **Doctor:** {d['doctor']}\n👤 **Patient:** {d['patient_name']}\n📅 **Date:** {d['visit_date']}\n🕒 **Schedule:** {d['doctor_schedule']}")
+                                    st.info("Registration successful. Please save this ticket.")
+                            st.session_state['selected_doc'] = None
+                        else: st.error(f"Error: {r.text}")
+                    except Exception as e: st.error(f"System Error: {e}")
+
+    # 2. HISTORY MENU
+    elif menu == MENU_HISTORY:
+        st.header("📂 My Visit History")
+        try:
+            data = requests.get(f"{API_URL}/public/my-history", headers=headers).json()
+            if not data: st.info("No records found.")
+            else:
+                for t in data:
+                    with st.container(border=True):
+                        c1, c2, c3 = st.columns([1, 3, 1])
+                        with c1:
+                            buf = io.BytesIO(); generate_qr({"id": t['id'], "antrean": t['queue_number']}).save(buf, format="PNG")
+                            st.image(buf)
+                        with c2:
+                            st.subheader(t['queue_number'])
+                            st.write(f"**{t['clinic']}** | {t['doctor']}\n📅 {t['visit_date']}")
+                            if t.get('catatan_medis'): st.info(f"Notes: {t['catatan_medis']}")
+                        with c3: st.write(f"Status: **{t['service_status']}**")
+        except: st.error("Failed to load records.")
+        
     # 2. HISTORY MENU
     elif menu == MENU_HISTORY:
         st.header("📂 My Tickets & Visit History")
@@ -404,7 +402,7 @@ else:
                     
                     if st.form_submit_button("Save Doctor"):
                         if dn.strip():
-                            payload = {"dokter": dn.strip(), "poli": dp, "practice_start_time": ts.strftime("%H:%M"), "practice_end_time": te.strftime("%H:%M"), "max_patients": dm}
+                            payload = {"dokter": dn.strip(), "clinic": dp, "practice_start_time": ts.strftime("%H:%M"), "practice_end_time": te.strftime("%H:%M"), "max_patients": dm}
                             r = requests.post(f"{API_URL}/admin/doctors", json=payload, headers=headers)
                             if r.status_code == 200:
                                 st.success("Doctor added!"); time_lib.sleep(1); st.rerun()

@@ -7,9 +7,9 @@ def init_users_final():
         print("🔄 Initializing Staff Accounts...")
         
         staff_list = [
-            {"username": "admin", "nama": "Super Admin", "role": "admin"},
-            {"username": "nurse", "nama": "Nurse Melati", "role": "perawat"},
-            {"username": "reception", "nama": "Reception Staff", "role": "administrasi"},
+        {"username": "admin", "nama": "Super Admin", "role": "admin"},
+        {"username": "nurse", "nama": "Nurse Melati", "role": "nurse"},
+        {"username": "reception", "nama": "Reception Staff", "role": "reception"},
         ]
         
         for staff in staff_list:

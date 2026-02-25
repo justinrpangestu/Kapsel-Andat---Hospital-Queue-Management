@@ -1,4 +1,4 @@
-doctor,doctor_id,practice_start_time,practice_end_time,doctor_code,max_patients,service,prefix
+doctor,doctor_id,practice_start_time,practice_end_time,doctor_code,max_patients,clinic,prefix
 Dr. Justin,1,8:00:00,15:00:00,B-001,24,Poli Gigi,B
 Dr. Riel,2,8:00:00,15:00:00,B-002,15,Poli Gigi,B
 Dr. a,3,8:00:00,15:00:00,D-001,24,Poli Jantung,D

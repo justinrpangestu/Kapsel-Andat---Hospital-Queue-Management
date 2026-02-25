@@ -23,6 +23,7 @@ class TabelPoli(Base):
     __tablename__ = "tabel_poli_normal"
     clinic = Column(String(100), primary_key=True, index=True)
     prefix = Column(String(10), unique=True)
+    doctors = relationship("TabelDokter", back_populates="clinic_rel")
 
 class TabelDokter(Base):
     __tablename__ = "tabel_dokter_normal"
@@ -33,8 +34,8 @@ class TabelDokter(Base):
     practice_end_time = Column(Time)
     doctor_code = Column(String(50))
     max_patients = Column(Integer)
-    poli_rel = relationship("TabelPoli", back_populates="dokters")
-    pelayanans = relationship("TabelPelayanan", back_populates="dokter_rel")
+    clinic_rel = relationship("TabelPoli", back_populates="doctors")
+    services = relationship("TabelPelayanan", back_populates="doctor_rel")
 
 class TabelPelayanan(Base):
     __tablename__ = "tabel_pelayanan_normal"
@@ -53,7 +54,7 @@ class TabelPelayanan(Base):
     queue_sequence = Column(Integer)
     catatan_medis = Column(String(255), nullable=True)
     status_member = Column(String(20))
-    dokter_rel = relationship("TabelDokter", back_populates="pelayanans")
+    doctor_rel = relationship("TabelDokter", back_populates="services")
 
 class TabelGabungan(Base):
     __tablename__ = "tabel_gabungan_transaksi"
