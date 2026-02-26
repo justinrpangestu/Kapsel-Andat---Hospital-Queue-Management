@@ -165,34 +165,39 @@ else:
         sel_date = c2.date_input("Visit Date", min_value=date.today(), key="reg_dt")
 
         # Doctor Selection
-        if sel_clinic:
-            st.markdown("---")
-            st.subheader(f"Available Doctors at {sel_clinic}")
-            try:
-                docs = requests.get(f"{API_URL}/public/available-doctors", params={"clinic_name": sel_clinic}, headers=headers).json()
-                if not docs:
-                    st.warning("No doctors available.")
-                else:
-                    cols = st.columns(3)
-                    for i, d in enumerate(docs):
-                        with cols[i % 3]:
-                            # Jika dokter ini yang dipilih, gunakan container dengan border berbeda/info
-                            is_selected = st.session_state.get('selected_doc') and st.session_state['selected_doc']['doctor_id'] == d['doctor_id']
-                            
-                            with st.container(border=True):
-                                if is_selected:
-                                    st.markdown("✅ **SELECTED**")
-                                
-                                st.markdown(f"#### {d['doctor']}")
-                                st.info(f"🕒 {str(d['practice_start_time'])[:5]} - {str(d['practice_end_time'])[:5]}")
-                                
-                                if st.button("Select", key=f"btn_{d['doctor_id']}", use_container_width=True):
-                                    st.session_state['selected_doc'] = d
-                                    st.rerun()
-            except Exception as e:
-                st.error(f"Error loading doctors: {e}")
-            except: pass
+    if sel_clinic:
+        st.markdown("---")
+        st.subheader(f"Available Doctors at {sel_clinic}")
+        try:
+            # Fetch data dokter
+            doc_res = requests.get(f"{API_URL}/public/available-doctors", params={"clinic_name": sel_clinic}, headers=headers)
+            docs = doc_res.json() if doc_res.status_code == 200 else []
+            
+            if not docs:
+                st.warning("No doctors available.")
+            else:
+                cols = st.columns(3)
+                for i, d in enumerate(docs):
+                    with cols[i % 3]:
+                        # LOGIKA HIGHLIGHT: Cek apakah ID dokter ini ada di session state
+                        is_selected = st.session_state.get('selected_doc') and st.session_state['selected_doc']['doctor_id'] == d['doctor_id']
+                        
+                        # Tampilan Container Dokter
+                        with st.container(border=True):
+                            if is_selected:
+                                st.markdown("✅ **SELECTED**")
+                            else:
+                                st.caption("Available")
 
+                            st.markdown(f"#### {d['doctor']}")
+                            st.info(f"🕒 {str(d['practice_start_time'])[:5]} - {str(d['practice_end_time'])[:5]}")
+                            
+                            # Tombol Select: Sekali pencet langsung update state dan rerun
+                            if st.button("Select", key=f"btn_doc_{d['doctor_id']}", use_container_width=True):
+                                st.session_state['selected_doc'] = d
+                                st.rerun() # Memaksa UI untuk highlight dalam satu kali klik
+        except:
+            st.error("Connection Error to fetch doctors.")
         # Submission Logic
         if st.session_state.get('selected_doc'):
             sel = st.session_state['selected_doc']
@@ -210,15 +215,28 @@ else:
                             d = r.json()
                             st.balloons()
                             with st.container(border=True):
-                                st.markdown("### 🎫 Ticket Generated Successfully")
-                                t1, t2 = st.columns([1, 2])
-                                with t1:
-                                    buf = io.BytesIO(); generate_qr({"id": d['id'], "antrean": d['queue_number']}).save(buf, format="PNG")
-                                    st.image(buf, use_container_width=True)
-                                with t2:
-                                    st.subheader(f"No. {d['queue_number']}")
-                                    st.write(f"🏢 **Clinic:** {d['clinic']}\n👨‍⚕️ **Doctor:** {d['doctor']}\n👤 **Patient:** {d['patient_name']}\n📅 **Date:** {d['visit_date']}\n🕒 **Schedule:** {d['doctor_schedule']}")
-                                    st.info("Registration successful. Please save this ticket.")
+                                st.markdown("### 🎫 Queue Ticket Created Successfully")
+                                
+                                # Grid Layout untuk Detail Tiket
+                                row1_col1, row1_col2 = st.columns(2)
+                                row1_col1.metric("Ticket Number", d['queue_number'])
+                                row1_col2.write(f"🏢 **Clinic:**\n{d['clinic']}")
+
+                                st.divider()
+
+                                row2_col1, row2_col2 = st.columns(2)
+                                row2_col1.write(f"👨‍⚕️ **Doctor:**\n{d['doctor']}")
+                                row2_col2.write(f"👤 **Patient:**\n{d['patient_name']}")
+
+                                st.divider()
+
+                                row3_col1, row3_col2 = st.columns(2)
+                                row3_col1.write(f"📅 **Visit Date:**\n{d['visit_date']}")
+                                row3_col2.write(f"🕒 **Schedule:**\n{d['doctor_schedule']}")
+
+                                st.success("Registration confirmed. Please save this ticket.")
+                                
+                            # Reset pilihan setelah sukses agar form bersih kembali
                             st.session_state['selected_doc'] = None
                         else: st.error(f"Error: {r.text}")
                     except Exception as e: st.error(f"System Error: {e}")
