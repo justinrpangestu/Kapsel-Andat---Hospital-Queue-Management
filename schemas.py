@@ -21,13 +21,15 @@ def format_doctor_title(name: str) -> str:
 
 def format_poli_name(name: str) -> str:
     if not name: return name
+    
+    # Standardize casing (e.g., 'dental clinic' -> 'Dental Clinic')
     clean_name = name.strip().title()
-    if not clean_name.startswith("Poli "):
-        if clean_name.startswith("Poli") and len(clean_name) > 4:
-             clean_name = clean_name[4:].strip()
-        return f"Poli {clean_name}"
+    
+    # New Validation: Ensure it ends with 'Clinic' instead of starting with 'Poli'
+    if not clean_name.endswith("Clinic"):
+        return f"{clean_name} Clinic"
+        
     return clean_name
-
 # --- SCHEMAS ---
 
 class PoliCreate(BaseModel):

@@ -60,10 +60,10 @@ class TabelGabungan(Base):
     __tablename__ = "tabel_gabungan_transaksi"
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     username = Column(String(50), index=True)
-    nama_pasien = Column(String(100))
-    poli = Column(String(100))
+    patient_name = Column(String(100))
+    clinic = Column(String(100))
     prefix_poli = Column(String(10))
-    dokter = Column(String(100))
+    doctor = Column(String(100))
     doctor_code = Column(String(50))
     doctor_id = Column(Integer)
     visit_date = Column(Date)

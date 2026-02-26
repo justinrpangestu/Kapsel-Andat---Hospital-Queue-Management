@@ -132,11 +132,24 @@ else:
         st.header("📋 Book Appointment")
         
         # Load Clinic Data
+        # --- A. DATA LOADING ---
         try: 
             res = requests.get(f"{API_URL}/public/polis", headers=headers)
-            raw_polis = res.json() if res.status_code == 200 else []
-            p_map = {p['clinic']: p for p in sorted(raw_polis, key=lambda x: x['clinic'])}
-        except: p_map = {}
+            if res.status_code == 200:
+                raw_polis = res.json()
+                # Ensure the response is a list before mapping
+                if isinstance(raw_polis, list) and len(raw_polis) > 0:
+                    # Sync with Backend key: 'clinic'
+                    p_map = {p['clinic']: p for p in sorted(raw_polis, key=lambda x: x['clinic'])}
+                else:
+                    st.warning("No clinics found in the database. Please add clinics in the Admin Dashboard.")
+                    p_map = {}
+            else:
+                st.error(f"Backend Error: {res.text}")
+                p_map = {}
+        except Exception as e: 
+            st.error(f"Connection Error: {e}")
+            p_map = {}
 
         c1, c2 = st.columns(2)
         
@@ -156,19 +169,28 @@ else:
             st.markdown("---")
             st.subheader(f"Available Doctors at {sel_clinic}")
             try:
-                doc_res = requests.get(f"{API_URL}/public/available-doctors", params={"clinic_name": sel_clinic}, headers=headers)
-                docs = doc_res.json() if doc_res.status_code == 200 else []
-                if not docs: st.warning("No doctors available.")
+                docs = requests.get(f"{API_URL}/public/available-doctors", params={"clinic_name": sel_clinic}, headers=headers).json()
+                if not docs:
+                    st.warning("No doctors available.")
                 else:
                     cols = st.columns(3)
                     for i, d in enumerate(docs):
                         with cols[i % 3]:
+                            # Jika dokter ini yang dipilih, gunakan container dengan border berbeda/info
+                            is_selected = st.session_state.get('selected_doc') and st.session_state['selected_doc']['doctor_id'] == d['doctor_id']
+                            
                             with st.container(border=True):
+                                if is_selected:
+                                    st.markdown("✅ **SELECTED**")
+                                
                                 st.markdown(f"#### {d['doctor']}")
                                 st.info(f"🕒 {str(d['practice_start_time'])[:5]} - {str(d['practice_end_time'])[:5]}")
-                                if st.button("Select Doctor", key=f"sel_{d['doctor_id']}", use_container_width=True):
+                                
+                                if st.button("Select", key=f"btn_{d['doctor_id']}", use_container_width=True):
                                     st.session_state['selected_doc'] = d
                                     st.rerun()
+            except Exception as e:
+                st.error(f"Error loading doctors: {e}")
             except: pass
 
         # Submission Logic
@@ -201,25 +223,6 @@ else:
                         else: st.error(f"Error: {r.text}")
                     except Exception as e: st.error(f"System Error: {e}")
 
-    # 2. HISTORY MENU
-    elif menu == MENU_HISTORY:
-        st.header("📂 My Visit History")
-        try:
-            data = requests.get(f"{API_URL}/public/my-history", headers=headers).json()
-            if not data: st.info("No records found.")
-            else:
-                for t in data:
-                    with st.container(border=True):
-                        c1, c2, c3 = st.columns([1, 3, 1])
-                        with c1:
-                            buf = io.BytesIO(); generate_qr({"id": t['id'], "antrean": t['queue_number']}).save(buf, format="PNG")
-                            st.image(buf)
-                        with c2:
-                            st.subheader(t['queue_number'])
-                            st.write(f"**{t['clinic']}** | {t['doctor']}\n📅 {t['visit_date']}")
-                            if t.get('catatan_medis'): st.info(f"Notes: {t['catatan_medis']}")
-                        with c3: st.write(f"Status: **{t['service_status']}**")
-        except: st.error("Failed to load records.")
         
     # 2. HISTORY MENU
     elif menu == MENU_HISTORY:
@@ -289,7 +292,7 @@ else:
         st.header("👨‍⚕️ Examination Room (Medical Input)")
         try:
             res_docs = requests.get(f"{API_URL}/admin/doctors", headers=headers) 
-            doc_list = [d['dokter'] for d in res_docs.json()] if res_docs.status_code == 200 else []
+            doc_list = [d['doctor'] for d in res_docs.json()] if res_docs.status_code == 200 else []
             if not doc_list: st.warning("Failed to load doctor list."); st.stop()
             selected_doc = st.selectbox("Select On-duty Doctor:", doc_list)
         except: st.error("Connection Error"); st.stop()
@@ -299,7 +302,7 @@ else:
         try:
             q_data = requests.get(f"{API_URL}/monitor/queue-board", headers=headers).json()
             # Status mapping in English
-            current_p = next((p for p in q_data if p['dokter'] == selected_doc and p['status_pelayanan'] == "Serving"), None)
+            current_p = next((p for p in q_data if p['doctor'] == selected_doc and p['status_pelayanan'] == "Serving"), None)
         except: pass
 
         if current_p:
@@ -322,7 +325,7 @@ else:
         
         try:
             pol_res = requests.get(f"{API_URL}/public/polis", headers=headers)
-            poli_list = ["ALL CLINICS"] + [p['poli'] for p in pol_res.json()] if pol_res.status_code == 200 else ["ALL CLINICS"]
+            poli_list = ["ALL CLINICS"] + [p['clinic'] for p in pol_res.json()] if pol_res.status_code == 200 else ["ALL CLINICS"]
         except: poli_list = ["ALL CLINICS"]
 
         c_filter, c_time = st.columns([1, 3])
@@ -340,13 +343,13 @@ else:
                 df = pd.DataFrame(raw_data)
 
                 if not df.empty:
-                    df = df[['queue_number', 'poli', 'dokter', 'status_pelayanan']]
+                    df = df[['queue_number', 'clinic', 'doctor', 'service_status']]
                     if target_poli != "ALL CLINICS":
-                        df = df[df['poli'] == target_poli]
+                        df = df[df['clinic'] == target_poli]
                     
                     if not df.empty:
-                        df_active = df[df['status_pelayanan'] == 'Serving']
-                        df_wait = df[df['status_pelayanan'] == 'Waiting']
+                        df_active = df[df['service_status'] == 'Serving']
+                        df_wait = df[df['service_status'] == 'Waiting']
 
                         col_active, col_wait = st.columns([2, 1])
                         with col_active:
@@ -356,8 +359,8 @@ else:
                                     st.markdown(f"""
                                     <div style="background-color: #d4edda; padding: 20px; border-radius: 10px; border-left: 10px solid #28a745; margin-bottom: 10px;">
                                         <h1 style="color: #155724; margin:0; font-size: 50px;">{row['queue_number']}</h1>
-                                        <h3 style="margin:0;">{row['poli']}</h3>
-                                        <p style="margin:0; font-style: italic;">{row['dokter']}</p>
+                                        <h3 style="margin:0;">{row['clinic']}</h3>
+                                        <p style="margin:0; font-style: italic;">{row['doctor']}</p>
                                     </div>
                                     """, unsafe_allow_html=True)
                             else: st.info("No patients currently being served.")
@@ -365,7 +368,7 @@ else:
                         with col_wait:
                             st.warning(f"🕒 WAITING LIST ({len(df_wait)})")
                             if not df_wait.empty:
-                                st.dataframe(df_wait[['queue_number', 'poli']], hide_index=True, use_container_width=True)
+                                st.dataframe(df_wait[['queue_number', 'clinic']], hide_index=True, use_container_width=True)
                             else: st.write("Waiting list empty.")
                     else: st.info(f"No active queue for **{target_poli}**.")
                 else: st.info("Hospital queue is currently empty.")
@@ -379,7 +382,7 @@ else:
         st.header("🛠️ Administrative Controls")
         t_doc, t_pol, t_imp = st.tabs(["Doctor Management", "Clinic Management", "Data Importer"])
         
-        try: p_opts = [x['poli'] for x in requests.get(f"{API_URL}/public/polis", headers=headers).json()]
+        try: p_opts = [x['clinic'] for x in requests.get(f"{API_URL}/public/polis", headers=headers).json()]
         except: p_opts = []
 
         with t_doc:
@@ -388,7 +391,7 @@ else:
             except: raw_docs = []
 
             if raw_docs:
-                df_doc = pd.DataFrame(raw_docs)[['doctor_id', 'dokter', 'poli', 'doctor_code', 'max_patients', 'practice_start_time', 'practice_end_time']]
+                df_doc = pd.DataFrame(raw_docs)[['doctor_id', 'doctor', 'clinic', 'doctor_code', 'max_patients', 'practice_start_time', 'practice_end_time']]
                 st.dataframe(df_doc, use_container_width=True, hide_index=True)
 
             with st.expander("➕ Add New Doctor"):
@@ -402,14 +405,14 @@ else:
                     
                     if st.form_submit_button("Save Doctor"):
                         if dn.strip():
-                            payload = {"dokter": dn.strip(), "clinic": dp, "practice_start_time": ts.strftime("%H:%M"), "practice_end_time": te.strftime("%H:%M"), "max_patients": dm}
+                            payload = {"doctor": dn.strip(), "clinic": dp, "practice_start_time": ts.strftime("%H:%M"), "practice_end_time": te.strftime("%H:%M"), "max_patients": dm}
                             r = requests.post(f"{API_URL}/admin/doctors", json=payload, headers=headers)
                             if r.status_code == 200:
                                 st.success("Doctor added!"); time_lib.sleep(1); st.rerun()
             
             with st.expander("❌ Delete Doctor"):
                 if raw_docs:
-                    del_opts = {f"{d['doctor_id']} - {d['dokter']}": d['doctor_id'] for d in raw_docs}
+                    del_opts = {f"{d['doctor_id']} - {d['doctor']}": d['doctor_id'] for d in raw_docs}
                     del_label = st.selectbox("Select Doctor to Delete", list(del_opts.keys()))
                     if st.button("Permanently Delete", type="primary"):
                         r = requests.delete(f"{API_URL}/admin/doctors/{del_opts[del_label]}", headers=headers)
@@ -426,7 +429,7 @@ else:
                 pn = st.text_input("Clinic Name (e.g., Dental Clinic)")
                 pp = st.text_input("Prefix Code (e.g., DENT)")
                 if st.button("Save Clinic"):
-                    r = requests.post(f"{API_URL}/admin/polis", json={"poli": pn.strip(), "prefix": pp.strip().upper()}, headers=headers)
+                    r = requests.post(f"{API_URL}/admin/polis", json={"clinic": pn.strip(), "prefix": pp.strip().upper()}, headers=headers)
                     if r.status_code == 200:
                         st.success("Saved!"); time_lib.sleep(1); st.rerun()
 
