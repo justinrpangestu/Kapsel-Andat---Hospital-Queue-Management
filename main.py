@@ -5,6 +5,7 @@ from sqlalchemy import text, func
 from typing import List, Optional
 from datetime import datetime, date, time, timedelta
 import random
+import math
 import pandas as pd
 from contextlib import asynccontextmanager
 from faker import Faker
@@ -52,6 +53,15 @@ def clean_simple_name(full_name: str) -> str:
     name_clean = re.sub(r'^(dr\.|drs\.|dra\.|ir\.|prof\.|h\.|hj\.|ns\.|mr\.|mrs\.)\s*', '', name_no_suffix, flags=re.IGNORECASE)
     parts = name_clean.replace('.', ' ').split()
     return parts[-1].title() if parts else "User"
+
+def normalize_doctor_name(name: str) -> str:
+    """Membersihkan gelar ganda seperti dr.Dr. atau Dr.dr. menjadi dr. saja"""
+    if not name: return "dr. Unknown"
+    # Menghapus semua variasi dr, dr., Dr, DR di awal string berulang kali
+    clean = re.sub(r'^(?:dr|dr\.|drs|dra|ir|prof|h|hj|ns|mr|mrs)\.?\s*', '', name, flags=re.IGNORECASE)
+    while re.match(r'^(?:dr|dr\.|drs|dra|ir|prof|h|hj|ns|mr|mrs)\.?\s*', clean, flags=re.IGNORECASE):
+        clean = re.sub(r'^(?:dr|dr\.|drs|dra|ir|prof|h|hj|ns|mr|mrs)\.?\s*', '', clean, flags=re.IGNORECASE)
+    return f"dr. {clean.strip().title()}"
 
 def get_estimated_wait_time(db: Session, doctor_id: int, current_queue_seq: int, v_date: date):
     # Calculate average service duration (Finished status)
@@ -434,43 +444,49 @@ def get_board(db: Session = Depends(get_db)):
 def get_analytics(db: Session = Depends(get_db)):
     try:
         res = db.query(storage.TabelPelayanan).all()
-        if not res:
-            return {"status": "No Data"}
+        if not res: return {"status": "No Data"}
 
-        # Ubah list objek database menjadi DataFrame
         df = pd.DataFrame([r.__dict__ for r in res])
         
-        # 1. Hitung Volume per Klinik (Pasti ada datanya)
-        clinic_vol = df['clinic'].value_counts().to_dict() if 'clinic' in df.columns else {}
+        # Konversi waktu secara aman
+        for col in ['checkin_time', 'clinic_entry_time', 'completion_time']:
+            df[col] = pd.to_datetime(df[col], errors='coerce')
+        
+        # 1. Hitung Durasi (Menit)
+        df['wait_min'] = (df['clinic_entry_time'] - df['checkin_time']).dt.total_seconds() / 60
+        df['svc_min'] = (df['completion_time'] - df['clinic_entry_time']).dt.total_seconds() / 60
 
-        # 2. Hitung Throughput Dokter (Pasti ada datanya)
-        throughput = df[df['service_status'] == 'Finished']['doctor'].value_counts().to_dict() if 'doctor' in df.columns else {}
+        # 2. Time Efficiency per Clinic (Hanya yang datanya valid)
+        valid_eff = df[(df['wait_min'] >= 0) & (df['svc_min'] >= 0)]
+        clinic_efficiency = {}
+        if not valid_eff.empty:
+            raw_eff = valid_eff.groupby('clinic')[['wait_min', 'svc_min']].mean().fillna(0).to_dict('index')
+            clinic_efficiency = {k: {"wait_minutes": round(v['wait_min'], 1), 
+                                     "service_minutes": round(v['svc_min'], 1)} 
+                                 for k, v in raw_eff.items()}
 
-        # 3. Hitung Ghost Rate (Pasien yang tidak check-in)
-        total = len(df)
-        ghosts = df['checkin_time'].isna().sum() if 'checkin_time' in df.columns else 0
-        ghost_rate = round((ghosts / total) * 100, 1) if total > 0 else 0
+        # 3. Peak Hour Trends
+        peak_hours = df['checkin_time'].dt.hour.value_counts().sort_index().to_dict()
 
-        # 4. Ambil 5 data diagnosa terakhir untuk WordCloud (Tanpa perhitungan rumit)
-        text_data = " ".join(df['catatan_medis'].dropna().astype(str))
+        # 4. Correlation (Wait vs Service)
+        correlation = 0
+        if len(valid_eff) > 1:
+            c = valid_eff['wait_min'].corr(valid_eff['svc_min'])
+            correlation = round(c, 2) if not math.isnan(c) else 0
 
-        # RETURN DATA MINIMALIS (PASTI BERHASIL)
         return {
             "status": "Success",
-            "total_patients": total,
-            "ghost_rate": ghost_rate,
-            "clinic_volume": clinic_vol,
-            "doctor_throughput": throughput,
-            "text_mining": text_data if len(text_data) > 2 else "No Data Available",
-            # Fallback untuk kunci yang diminta frontend agar tidak KeyError
-            "peak_hours": {},
-            "clinic_efficiency": {},
-            "correlation": 0
+            "total_patients": len(df),
+            "ghost_rate": round(df['checkin_time'].isna().sum() / len(df) * 100, 1) if len(df) > 0 else 0,
+            "correlation": correlation,
+            "peak_hours": peak_hours,
+            "clinic_volume": df['clinic'].value_counts().to_dict(),
+            "clinic_efficiency": clinic_efficiency,
+            "doctor_throughput": df[df['service_status'] == 'Finished']['doctor'].value_counts().to_dict(),
+            "text_mining": " ".join(df['catatan_medis'].dropna().astype(str))
         }
     except Exception as e:
-        print(f"DEBUG ERROR: {str(e)}")
         raise HTTPException(500, detail=str(e))
-
 
 # =================================================================
 # 8. APP ROUTER REGISTRATION

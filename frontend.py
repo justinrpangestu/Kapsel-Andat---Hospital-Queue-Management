@@ -392,10 +392,18 @@ else:
         # --- TAB 1: DOCTOR MANAGEMENT (VIEW, ADD, EDIT, DELETE) ---
         with t_doc:
             st.subheader("Manage Doctors")
+            # FITUR FILTER
+            col_f1, col_f2 = st.columns([2, 1])
+            f_clinic = col_f1.selectbox("🔍 Filter by Clinic:", ["All Clinics"] + p_opts)
+            
             try: 
                 raw_docs = requests.get(f"{API_URL}/admin/doctors", headers=headers).json()
-            except: 
-                raw_docs = []
+                # Terapkan Filter
+                if f_clinic != "All Clinics":
+                    filtered_docs = [d for d in raw_docs if d['clinic'] == f_clinic]
+                else:
+                    filtered_docs = raw_docs
+            except: filtered_docs = []
 
             # A. Add New Doctor
             with st.expander("➕ Add New Doctor"):
@@ -439,6 +447,18 @@ else:
         with t_pol:
             st.subheader("Clinic Operations")
             if raw_polis:
+                    # FITUR TAMBAH KLINIK
+                with st.container(border=True):
+                    st.markdown("#### ➕ Add New Clinic")
+                    c_n = st.text_input("Clinic Name (e.g., Cardiology Clinic)")
+                    c_p = st.text_input("Prefix Code (e.g., CARD)")
+                    if st.button("✨ Create Clinic", use_container_width=True):
+                        if c_n and c_p:
+                            res = requests.post(f"{API_URL}/admin/polis", json={"clinic": c_n, "prefix": c_p}, headers=headers)
+                            if res.status_code == 200: st.success("Clinic Created!"); st.rerun()
+                            else: st.error(res.text)
+
+                st.markdown("---")
                 for p in raw_polis:
                     with st.expander(f"Clinic: {p['clinic']} ({p['prefix']})"):
                         new_name = st.text_input("New Name", value=p['clinic'], key=f"ed_cl_nm_{p['clinic']}")
