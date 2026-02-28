@@ -127,36 +127,22 @@ else:
 
     menu = st.sidebar.radio("Navigation", menu_opts)
 
-    # 1. REGISTRATION MENU
+# =================================================================
+    # 1. REGISTRATION MENU (INDENTATION & UI FIXED)
+    # =================================================================
     if menu == MENU_BOOK:
         st.header("📋 Book Appointment")
         
-        # Load Clinic Data
-        # --- A. DATA LOADING ---
         try: 
             res = requests.get(f"{API_URL}/public/polis", headers=headers)
-            if res.status_code == 200:
-                raw_polis = res.json()
-                # Ensure the response is a list before mapping
-                if isinstance(raw_polis, list) and len(raw_polis) > 0:
-                    # Sync with Backend key: 'clinic'
-                    p_map = {p['clinic']: p for p in sorted(raw_polis, key=lambda x: x['clinic'])}
-                else:
-                    st.warning("No clinics found in the database. Please add clinics in the Admin Dashboard.")
-                    p_map = {}
-            else:
-                st.error(f"Backend Error: {res.text}")
-                p_map = {}
-        except Exception as e: 
-            st.error(f"Connection Error: {e}")
-            p_map = {}
+            raw_polis = res.json() if res.status_code == 200 else []
+            p_map = {p['clinic']: p for p in sorted(raw_polis, key=lambda x: x['clinic'])}
+        except: p_map = {}
 
         c1, c2 = st.columns(2)
-        
-        # Patient Identification
         if role in ['admin', 'nurse', 'reception']:
-            patient_nm = c1.text_input("Patient Name (As per ID)", key="reg_nm")
-            target_uname = c1.text_input("Patient Account Username (Optional)", key="reg_un")
+            patient_nm = c1.text_input("Patient Name (As per ID Card)", key="reg_nm")
+            target_uname = c1.text_input("Patient Username (Optional)", key="reg_un")
         else:
             patient_nm = c1.text_input("Patient Name", value=st.session_state['nama_user'], disabled=True, key="reg_nm_lock")
             target_uname = None
@@ -164,83 +150,80 @@ else:
         sel_clinic = c1.selectbox("Target Clinic", list(p_map.keys()) if p_map else [], index=None, placeholder="Choose Clinic...", key="reg_cl")
         sel_date = c2.date_input("Visit Date", min_value=date.today(), key="reg_dt")
 
-        # Doctor Selection
-    if sel_clinic:
-        st.markdown("---")
-        st.subheader(f"Available Doctors at {sel_clinic}")
-        try:
-            # Fetch data dokter
-            doc_res = requests.get(f"{API_URL}/public/available-doctors", params={"clinic_name": sel_clinic}, headers=headers)
-            docs = doc_res.json() if doc_res.status_code == 200 else []
-            
-            if not docs:
-                st.warning("No doctors available.")
-            else:
-                cols = st.columns(3)
-                for i, d in enumerate(docs):
-                    with cols[i % 3]:
-                        # LOGIKA HIGHLIGHT: Cek apakah ID dokter ini ada di session state
-                        is_selected = st.session_state.get('selected_doc') and st.session_state['selected_doc']['doctor_id'] == d['doctor_id']
-                        
-                        # Tampilan Container Dokter
-                        with st.container(border=True):
-                            if is_selected:
-                                st.markdown("✅ **SELECTED**")
-                            else:
-                                st.caption("Available")
+        # --- B. DOCTOR SELECTION ---
+        if sel_clinic:
+            st.markdown("---")
+            st.subheader(f"Available Doctors at {sel_clinic}")
+            try:
+                doc_res = requests.get(f"{API_URL}/public/available-doctors", params={"clinic_name": sel_clinic}, headers=headers)
+                docs = doc_res.json() if doc_res.status_code == 200 else []
+                
+                if not docs:
+                    st.warning("No doctors available.")
+                else:
+                    cols = st.columns(3)
+                    for i, d in enumerate(docs):
+                        with cols[i % 3]:
+                            is_selected = st.session_state.get('selected_doc') and st.session_state['selected_doc']['doctor_id'] == d['doctor_id']
+                            with st.container(border=True):
+                                if is_selected: st.markdown("✅ **SELECTED**")
+                                else: st.caption("Available")
+                                st.markdown(f"#### {d['doctor']}")
+                                st.info(f"🕒 {str(d['practice_start_time'])[:5]} - {str(d['practice_end_time'])[:5]}")
+                                if st.button("Select", key=f"btn_doc_{d['doctor_id']}", use_container_width=True):
+                                    st.session_state['selected_doc'] = d
+                                    st.rerun() 
+            except Exception as e:
+                st.error(f"Connection error: {e}")
 
-                            st.markdown(f"#### {d['doctor']}")
-                            st.info(f"🕒 {str(d['practice_start_time'])[:5]} - {str(d['practice_end_time'])[:5]}")
-                            
-                            # Tombol Select: Sekali pencet langsung update state dan rerun
-                            if st.button("Select", key=f"btn_doc_{d['doctor_id']}", use_container_width=True):
-                                st.session_state['selected_doc'] = d
-                                st.rerun() # Memaksa UI untuk highlight dalam satu kali klik
-        except:
-            st.error("Connection Error to fetch doctors.")
-        # Submission Logic
+        # --- C. SUBMISSION & LARGE TICKET (DI LUAR EXCEPT) ---
         if st.session_state.get('selected_doc'):
             sel = st.session_state['selected_doc']
-            st.success(f"Selected: **{sel['doctor']}**")
-            
-            if st.button("✅ Confirm Booking", type="primary", use_container_width=True, key="btn_sub"):
-                if not patient_nm.strip(): st.error("Patient name is required.")
-                else:
-                    payload = {"clinic": sel_clinic, "doctor_id": sel['doctor_id'], "visit_date": str(sel_date)}
-                    if target_uname: payload["username_pasien"] = target_uname.strip()
-                    
-                    try:
-                        r = requests.post(f"{API_URL}/public/submit", json=payload, headers=headers)
-                        if r.status_code == 200:
-                            d = r.json()
-                            st.balloons()
-                            with st.container(border=True):
-                                st.markdown("### 🎫 Queue Ticket Created Successfully")
+            with st.container(border=True):
+                st.markdown("### 🔍 Confirm Appointment")
+                st.warning(f"Register for **{sel['doctor']}** at **{sel_clinic}**?")
+                
+                if st.button("✅ Yes, Confirm Booking", type="primary", use_container_width=True, key="btn_sub_final"):
+                    if not patient_nm.strip(): st.error("Patient name is required.")
+                    else:
+                        payload = {"clinic": sel_clinic, "doctor_id": sel['doctor_id'], "visit_date": str(sel_date)}
+                        if target_uname: payload["username_pasien"] = target_uname.strip()
+                        
+                        try:
+                            r = requests.post(f"{API_URL}/public/submit", json=payload, headers=headers)
+                            if r.status_code == 200:
+                                d = r.json()
+                                st.balloons()
                                 
-                                # Grid Layout untuk Detail Tiket
-                                row1_col1, row1_col2 = st.columns(2)
-                                row1_col1.metric("Ticket Number", d['queue_number'])
-                                row1_col2.write(f"🏢 **Clinic:**\n{d['clinic']}")
-
-                                st.divider()
-
-                                row2_col1, row2_col2 = st.columns(2)
-                                row2_col1.write(f"👨‍⚕️ **Doctor:**\n{d['doctor']}")
-                                row2_col2.write(f"👤 **Patient:**\n{d['patient_name']}")
-
-                                st.divider()
-
-                                row3_col1, row3_col2 = st.columns(2)
-                                row3_col1.write(f"📅 **Visit Date:**\n{d['visit_date']}")
-                                row3_col2.write(f"🕒 **Schedule:**\n{d['doctor_schedule']}")
-
-                                st.success("Registration confirmed. Please save this ticket.")
+                                # TAMPILAN TIKET SESUAI PERMINTAAN (NOMOR BESAR)
+                                with st.container(border=True):
+                                    st.markdown(f"""
+                                        <div style='text-align: center; background-color: #f0f8ff; padding: 30px; border-radius: 15px; border: 2px solid #2E86C1;'>
+                                            <p style='margin:0; font-size: 20px; color: #555;'>Your Queue Number</p>
+                                            <h1 style='font-size: 110px; color: #2E86C1; margin: 10px 0;'>{d['queue_number']}</h1>
+                                        </div>
+                                    """, unsafe_allow_html=True)
+                                    
+                                    st.write("") 
+                                    col_a, col_b = st.columns(2)
+                                    col_a.write(f"🏢 **Clinic:**\n{d['clinic']}")
+                                    col_b.write(f"👨‍⚕️ **Doctor:**\n{d['doctor']}")
+                                    st.divider()
+                                    col_c, col_d, col_e = st.columns(3)
+                                    col_c.write(f"👤 **Patient:**\n{d['patient_name']}")
+                                    col_d.write(f"📅 **Date:**\n{d['visit_date']}")
+                                    col_e.write(f"🕒 **Hours:**\n{d['doctor_schedule']}")
+                                    
+                                    st.divider()
+                                    qr_col1, qr_col2, qr_col3 = st.columns([1, 1, 1])
+                                    with qr_col2:
+                                        qr_buf = io.BytesIO()
+                                        generate_qr({"id": d['id'], "antrean": d['queue_number']}).save(qr_buf, format="PNG")
+                                        st.image(qr_buf, caption="Scan at Reception", use_container_width=True)
                                 
-                            # Reset pilihan setelah sukses agar form bersih kembali
-                            st.session_state['selected_doc'] = None
-                        else: st.error(f"Error: {r.text}")
-                    except Exception as e: st.error(f"System Error: {e}")
-
+                                st.session_state['selected_doc'] = None
+                            else: st.error(f"⛔ Error: {r.text}")
+                        except Exception as e: st.error(f"System Error: {e}")
         
     # 2. HISTORY MENU
     elif menu == MENU_HISTORY:
@@ -398,66 +381,91 @@ else:
     # 6. ADMIN DASHBOARD MENU
     elif menu == MENU_ADMIN:
         st.header("🛠️ Administrative Controls")
-        t_doc, t_pol, t_imp = st.tabs(["Doctor Management", "Clinic Management", "Data Importer"])
+        t_doc, t_pol, t_imp = st.tabs(["👨‍⚕️ Doctor Management", "🏥 Clinic Management", "📊 Data Importer"])
         
-        try: p_opts = [x['clinic'] for x in requests.get(f"{API_URL}/public/polis", headers=headers).json()]
+        # Ambil daftar klinik untuk dropdown
+        try: 
+            raw_polis = requests.get(f"{API_URL}/public/polis", headers=headers).json()
+            p_opts = [x['clinic'] for x in raw_polis]
         except: p_opts = []
 
+        # --- TAB 1: DOCTOR MANAGEMENT (VIEW, ADD, EDIT, DELETE) ---
         with t_doc:
             st.subheader("Manage Doctors")
-            try: raw_docs = requests.get(f"{API_URL}/admin/doctors", headers=headers).json()
-            except: raw_docs = []
+            try: 
+                raw_docs = requests.get(f"{API_URL}/admin/doctors", headers=headers).json()
+            except: 
+                raw_docs = []
 
-            if raw_docs:
-                df_doc = pd.DataFrame(raw_docs)[['doctor_id', 'doctor', 'clinic', 'doctor_code', 'max_patients', 'practice_start_time', 'practice_end_time']]
-                st.dataframe(df_doc, use_container_width=True, hide_index=True)
-
+            # A. Add New Doctor
             with st.expander("➕ Add New Doctor"):
                 with st.form("add_doc_form"):
                     c1, c2 = st.columns(2)
-                    dn = c1.text_input("Doctor Name (e.g., Budi Santoso)")
-                    dp = c2.selectbox("Clinic", p_opts if p_opts else ["Default"])
+                    dn = c1.text_input("Doctor Name")
+                    dp = c2.selectbox("Assign to Clinic", p_opts if p_opts else ["Default"])
                     ts = st.time_input("Start Time", time(8, 0))
                     te = st.time_input("End Time", time(16, 0))
-                    dm = st.number_input("Patient Quota", min_value=1, value=20)
-                    
+                    dm = st.number_input("Daily Patient Quota", min_value=1, value=20)
                     if st.form_submit_button("Save Doctor"):
-                        if dn.strip():
-                            payload = {"doctor": dn.strip(), "clinic": dp, "practice_start_time": ts.strftime("%H:%M"), "practice_end_time": te.strftime("%H:%M"), "max_patients": dm}
-                            r = requests.post(f"{API_URL}/admin/doctors", json=payload, headers=headers)
-                            if r.status_code == 200:
-                                st.success("Doctor added!"); time_lib.sleep(1); st.rerun()
-            
-            with st.expander("❌ Delete Doctor"):
-                if raw_docs:
-                    del_opts = {f"{d['doctor_id']} - {d['doctor']}": d['doctor_id'] for d in raw_docs}
-                    del_label = st.selectbox("Select Doctor to Delete", list(del_opts.keys()))
-                    if st.button("Permanently Delete", type="primary"):
-                        r = requests.delete(f"{API_URL}/admin/doctors/{del_opts[del_label]}", headers=headers)
-                        if r.status_code == 200:
-                            st.success("Deleted!"); time_lib.sleep(1); st.rerun()
+                        payload = {"doctor": dn, "clinic": dp, "practice_start_time": ts.strftime("%H:%M"), "practice_end_time": te.strftime("%H:%M"), "max_patients": dm}
+                        r = requests.post(f"{API_URL}/admin/doctors", json=payload, headers=headers)
+                        if r.status_code == 200: st.success("Added!"); st.rerun()
+                        else: st.error(r.text)
 
+            # B. Edit & Delete Existing Doctors
+            st.write("---")
+            if raw_docs:
+                for d in raw_docs:
+                    with st.expander(f"Dr. {d['doctor']} ({d['clinic']})"):
+                        # Form Edit Doctor
+                        e_name = st.text_input("Name", value=d['doctor'], key=f"ed_name_{d['doctor_id']}")
+                        e_clinic = st.selectbox("Clinic", p_opts, index=p_opts.index(d['clinic']) if d['clinic'] in p_opts else 0, key=f"ed_cl_{d['doctor_id']}")
+                        e_quota = st.number_input("Quota", value=d['max_patients'], key=f"ed_q_{d['doctor_id']}")
+                        
+                        col1, col2 = st.columns(2)
+                        if col1.button("💾 Update Info", key=f"sav_d_{d['doctor_id']}"):
+                            # Gunakan endpoint PUT yang kita buat di main.py
+                            upd_payload = {"doctor": e_name, "clinic": e_clinic, "max_patients": e_quota, 
+                                           "practice_start_time": str(d['practice_start_time'])[:5], "practice_end_time": str(d['practice_end_time'])[:5]}
+                            res = requests.put(f"{API_URL}/admin/doctors/{d['doctor_id']}", json=upd_payload, headers=headers)
+                            if res.status_code == 200: st.success("Updated!"); st.rerun()
+                        
+                        if col2.button("🗑️ Remove Doctor", key=f"del_d_{d['doctor_id']}", type="secondary"):
+                            res = requests.delete(f"{API_URL}/admin/doctors/{d['doctor_id']}", headers=headers)
+                            if res.status_code == 200: st.success("Deleted!"); st.rerun()
+                            else: st.error(res.json().get('detail', 'Failed'))
+
+        # --- TAB 2: CLINIC MANAGEMENT (EDIT & DELETE WITH VALIDATION) ---
         with t_pol:
-            st.subheader("Clinic Management")
-            try: pol_data = requests.get(f"{API_URL}/public/polis", headers=headers).json()
-            except: pol_data = []
-            if pol_data: st.dataframe(pd.DataFrame(pol_data), use_container_width=True, hide_index=True)
-
-            with st.expander("➕ Add Clinic"):
-                pn = st.text_input("Clinic Name (e.g., Dental Clinic)")
-                pp = st.text_input("Prefix Code (e.g., DENT)")
-                if st.button("Save Clinic"):
-                    r = requests.post(f"{API_URL}/admin/polis", json={"clinic": pn.strip(), "prefix": pp.strip().upper()}, headers=headers)
-                    if r.status_code == 200:
-                        st.success("Saved!"); time_lib.sleep(1); st.rerun()
-
+            st.subheader("Clinic Operations")
+            if raw_polis:
+                for p in raw_polis:
+                    with st.expander(f"Clinic: {p['clinic']} ({p['prefix']})"):
+                        new_name = st.text_input("New Name", value=p['clinic'], key=f"ed_cl_nm_{p['clinic']}")
+                        new_pref = st.text_input("New Prefix", value=p['prefix'], key=f"ed_cl_pr_{p['clinic']}")
+                        
+                        col1, col2 = st.columns(2)
+                        if col1.button("💾 Save Changes", key=f"sv_cl_{p['clinic']}"):
+                            res = requests.put(f"{API_URL}/admin/polis/{p['clinic']}", 
+                                             json={"clinic": new_name, "prefix": new_pref}, headers=headers)
+                            if res.status_code == 200: st.success("Updated!"); st.rerun()
+                            else: st.error(res.text)
+                            
+                        if col2.button("🗑️ Delete Clinic", key=f"dl_cl_{p['clinic']}"):
+                            res = requests.delete(f"{API_URL}/admin/polis/{p['clinic']}", headers=headers)
+                            if res.status_code == 200:
+                                st.success("Deleted!"); st.rerun()
+                            else:
+                                # Backend akan mengirim error jika masih ada dokter di klinik ini
+                                st.error(f"⛔ {res.json().get('detail')}")
+        # --- TAB 3: DATA IMPORTER ---
         with t_imp:
-            st.subheader("Data Generator")
-            cnt = st.number_input("Number of Records", 10)
-            if st.button("Import Dummy Data"):
-                with st.spinner("Generating..."):
+            st.subheader("Generate Dummy Analytics Data")
+            cnt = st.number_input("Records to generate", 10, 100, 20)
+            if st.button("🚀 Start Import Process"):
+                with st.spinner("Processing..."):
                     r = requests.get(f"{API_URL}/admin/import-random-data", params={"count": cnt}, headers=headers)
-                    st.success(r.json().get('message', 'Import Finished'))
+                    if r.status_code == 200: st.success(r.json().get('message')); st.balloons()
 
     # 7. DATA SCIENCE MENU
     elif menu == MENU_INSIGHTS:
@@ -487,21 +495,24 @@ else:
                 r = requests.get(f"{API_URL}/analytics/comprehensive-report", params=params, headers=headers)
                 if r.status_code == 200:
                     d = r.json()
-                    if d.get("status") == "No Data": st.warning(f"No records found for {filter_mode}."); st.stop()
                     
                     # --- KPI METRICS ---
                     k1, k2, k3, k4 = st.columns(4)
                     k1.metric("Total Patient Volume", d['total_patients'])
-                    peak = str(max(d['peak_hours'], key=d['peak_hours'].get)) + ":00" if d['peak_hours'] else "-"
-                    k2.metric("Peak Arrival Hour", peak)
-                    k3.metric("Ghosting Rate", f"{d['ghost_rate']}%", help="Percentage of no-shows.")
-                    k4.metric("Load vs Speed Correlation", d['correlation'])
+                    
+                    # FIX: Robust peak hour display
+                    peak_dict = d.get('peak_hours', {})
+                    peak_hour = max(peak_dict, key=peak_dict.get) if peak_dict else "N/A"
+                    k2.metric("Peak Arrival Hour", f"{peak_hour}:00" if peak_hour != "N/A" else "-")
+                    
+                    k3.metric("Ghosting Rate", f"{d['ghost_rate']}%")
+                    k4.metric("Load Correlation", d['correlation'])
 
                     st.markdown("---")
 
                     # --- 1. VOLUME ANALYSIS ---
                     st.subheader("1. Patient Distribution by Clinic")
-                    df_vol = pd.DataFrame(list(d['poli_volume'].items()), columns=['Clinic', 'Total'])
+                    df_vol = pd.DataFrame(list(d['clinic_volume'].items()), columns=['Clinic', 'Total'])
                     if not df_vol.empty:
                         fig_vol = px.bar(df_vol, x='Clinic', y='Total', color_discrete_sequence=['#FF8C00'], title="Volume per Clinic")
                         st.plotly_chart(fig_vol, use_container_width=True)
@@ -512,7 +523,7 @@ else:
                     with c_left:
                         st.subheader("2. Time Efficiency (Wait vs Serving)")
                         eff_data = []
-                        for p, m in d['poli_efficiency'].items():
+                        for p, m in d['clinic_efficiency'].items():
                             eff_data.append({'Clinic': p, 'Minutes': m['wait_minutes'], 'Type': 'Waiting (Red)'})
                             eff_data.append({'Clinic': p, 'Minutes': m['service_minutes'], 'Type': 'Serving (Green)'})
                         df_eff = pd.DataFrame(eff_data)
@@ -533,14 +544,16 @@ else:
                     st.markdown("---")
                     c_prod, c_ghost = st.columns(2)
 
-                    # --- 4. DOCTOR PRODUCTIVITY ---
-                    with c_prod:
-                        st.subheader("4. Doctor Throughput (Speed)")
-                        df_doc_t = pd.DataFrame(list(d['doctor_throughput'].items()), columns=['Doctor', 'Patients/Hour'])
-                        if not df_doc_t.empty:
-                            st.plotly_chart(px.bar(df_doc_t, y='Doctor', x='Patients/Hour', orientation='h', 
-                                                   color='Patients/Hour', color_continuous_scale='Viridis'), use_container_width=True)
-
+                    # --- 4. DOCTOR PRODUCTIVITY (THROUGHPUT) ---
+                    st.subheader("4. Doctor Throughput (Total Served)")
+                    doc_data = d.get('doctor_throughput', {})
+                    if doc_data:
+                        df_doc_t = pd.DataFrame(list(doc_data.items()), columns=['Doctor', 'Patients'])
+                        fig_prod = px.bar(df_doc_t, y='Doctor', x='Patients', orientation='h', 
+                                        color='Patients', color_continuous_scale='Viridis')
+                        st.plotly_chart(fig_prod, use_container_width=True)
+                    else:
+                        st.info("No doctors have finished serving patients yet.")
                     # --- 5. GHOSTING RATE GAUGE ---
                     with c_ghost:
                         st.subheader("5. No-Show Rate Analysis")
