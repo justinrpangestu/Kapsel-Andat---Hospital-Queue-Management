@@ -378,34 +378,27 @@ else:
 
         time_lib.sleep(10); st.rerun()
 
-    # 6. ADMIN DASHBOARD MENU
+ # =================================================================
+    # 6. ADMIN DASHBOARD (FIXED & FULL FEATURES)
+    # =================================================================
     elif menu == MENU_ADMIN:
         st.header("🛠️ Administrative Controls")
         t_doc, t_pol, t_imp = st.tabs(["👨‍⚕️ Doctor Management", "🏥 Clinic Management", "📊 Data Importer"])
         
-        # Ambil daftar klinik untuk dropdown
-        try: 
-            raw_polis = requests.get(f"{API_URL}/public/polis", headers=headers).json()
+        # --- A. DATA PREPARATION ---
+        try:
+            r_pol = requests.get(f"{API_URL}/public/polis", headers=headers)
+            # Pastikan raw_polis adalah list. Jika server error, jadikan list kosong.
+            raw_polis = r_pol.json() if (r_pol.status_code == 200 and isinstance(r_pol.json(), list)) else []
             p_opts = [x['clinic'] for x in raw_polis]
-        except: p_opts = []
+        except: 
+            raw_polis, p_opts = [], []
 
-        # --- TAB 1: DOCTOR MANAGEMENT (VIEW, ADD, EDIT, DELETE) ---
+        # --- TAB 1: DOCTOR MANAGEMENT (FILTER + EDIT + DELETE) ---
         with t_doc:
             st.subheader("Manage Doctors")
-            # FITUR FILTER
-            col_f1, col_f2 = st.columns([2, 1])
-            f_clinic = col_f1.selectbox("🔍 Filter by Clinic:", ["All Clinics"] + p_opts)
             
-            try: 
-                raw_docs = requests.get(f"{API_URL}/admin/doctors", headers=headers).json()
-                # Terapkan Filter
-                if f_clinic != "All Clinics":
-                    filtered_docs = [d for d in raw_docs if d['clinic'] == f_clinic]
-                else:
-                    filtered_docs = raw_docs
-            except: filtered_docs = []
-
-            # A. Add New Doctor
+            # 1. Add New Doctor
             with st.expander("➕ Add New Doctor"):
                 with st.form("add_doc_form"):
                     c1, c2 = st.columns(2)
@@ -415,78 +408,87 @@ else:
                     te = st.time_input("End Time", time(16, 0))
                     dm = st.number_input("Daily Patient Quota", min_value=1, value=20)
                     if st.form_submit_button("Save Doctor"):
+                        # Gelar akan dinormalisasi secara otomatis oleh Pydantic di Backend
                         payload = {"doctor": dn, "clinic": dp, "practice_start_time": ts.strftime("%H:%M"), "practice_end_time": te.strftime("%H:%M"), "max_patients": dm}
                         r = requests.post(f"{API_URL}/admin/doctors", json=payload, headers=headers)
                         if r.status_code == 200: st.success("Added!"); st.rerun()
                         else: st.error(r.text)
 
-            # B. Edit & Delete Existing Doctors
             st.write("---")
-            if raw_docs:
-                for d in raw_docs:
-                    with st.expander(f"Dr. {d['doctor']} ({d['clinic']})"):
-                        # Form Edit Doctor
-                        e_name = st.text_input("Name", value=d['doctor'], key=f"ed_name_{d['doctor_id']}")
-                        e_clinic = st.selectbox("Clinic", p_opts, index=p_opts.index(d['clinic']) if d['clinic'] in p_opts else 0, key=f"ed_cl_{d['doctor_id']}")
-                        e_quota = st.number_input("Quota", value=d['max_patients'], key=f"ed_q_{d['doctor_id']}")
+            st.write("#### 🛠️ Edit or Delete Existing Doctors")
+            
+            # 2. Filter Clinic: Task 2
+            f_col1, f_col2 = st.columns([2, 1])
+            sel_filter = f_col1.selectbox("🔍 Filter list by Clinic:", ["All Clinics"] + p_opts, key="admin_filter_doc")
+            
+            try:
+                raw_docs = requests.get(f"{API_URL}/admin/doctors", headers=headers).json()
+                docs_to_show = [d for d in raw_docs if d['clinic'] == sel_filter] if sel_filter != "All Clinics" else raw_docs
+                
+                for d in docs_to_show:
+                    with st.expander(f"{d['doctor']} — {d['clinic']}"):
+                        # Opsi Edit
+                        e_name = st.text_input("Full Name", value=d['doctor'], key=f"nm_{d['doctor_id']}")
+                        e_clinic = st.selectbox("Clinic", p_opts, index=p_opts.index(d['clinic']) if d['clinic'] in p_opts else 0, key=f"cl_{d['doctor_id']}")
+                        e_quota = st.number_input("Quota", value=int(d['max_patients']), key=f"q_{d['doctor_id']}")
                         
-                        col1, col2 = st.columns(2)
-                        if col1.button("💾 Update Info", key=f"sav_d_{d['doctor_id']}"):
-                            # Gunakan endpoint PUT yang kita buat di main.py
+                        btn_sv, btn_dl = st.columns(2)
+                        if btn_sv.button("💾 Save Changes", key=f"sv_{d['doctor_id']}", use_container_width=True):
                             upd_payload = {"doctor": e_name, "clinic": e_clinic, "max_patients": e_quota, 
                                            "practice_start_time": str(d['practice_start_time'])[:5], "practice_end_time": str(d['practice_end_time'])[:5]}
                             res = requests.put(f"{API_URL}/admin/doctors/{d['doctor_id']}", json=upd_payload, headers=headers)
                             if res.status_code == 200: st.success("Updated!"); st.rerun()
                         
-                        if col2.button("🗑️ Remove Doctor", key=f"del_d_{d['doctor_id']}", type="secondary"):
+                        if btn_dl.button("🗑️ Delete Doctor", key=f"dl_{d['doctor_id']}", use_container_width=True, type="secondary"):
                             res = requests.delete(f"{API_URL}/admin/doctors/{d['doctor_id']}", headers=headers)
-                            if res.status_code == 200: st.success("Deleted!"); st.rerun()
-                            else: st.error(res.json().get('detail', 'Failed'))
+                            if res.status_code == 200: st.warning("Deleted"); st.rerun()
+            except: pass
 
-        # --- TAB 2: CLINIC MANAGEMENT (EDIT & DELETE WITH VALIDATION) ---
+        # --- TAB 2: CLINIC MANAGEMENT (ADD CLINIC + EDIT + DELETE) ---
         with t_pol:
-            st.subheader("Clinic Operations")
-            if raw_polis:
-                    # FITUR TAMBAH KLINIK
-                with st.container(border=True):
-                    st.markdown("#### ➕ Add New Clinic")
-                    c_n = st.text_input("Clinic Name (e.g., Cardiology Clinic)")
-                    c_p = st.text_input("Prefix Code (e.g., CARD)")
-                    if st.button("✨ Create Clinic", use_container_width=True):
-                        if c_n and c_p:
-                            res = requests.post(f"{API_URL}/admin/polis", json={"clinic": c_n, "prefix": c_p}, headers=headers)
-                            if res.status_code == 200: st.success("Clinic Created!"); st.rerun()
-                            else: st.error(res.text)
+            st.subheader("Clinic Management")
+            
+            # 1. Fitur Tambah Clinic: Task 2
+            with st.container(border=True):
+                st.markdown("#### ➕ Add New Clinic")
+                c_n = st.text_input("Clinic Name (e.g., Cardiology Clinic)", key="new_cl_name")
+                c_p = st.text_input("Prefix Code (e.g., CARD)", key="new_cl_pref")
+                if st.button("✨ Create Clinic", use_container_width=True):
+                    if c_n and c_p:
+                        res = requests.post(f"{API_URL}/admin/polis", json={"clinic": c_n, "prefix": c_p}, headers=headers)
+                        if res.status_code == 200: st.success("Clinic Created!"); st.rerun()
+                        else: st.error(res.text)
 
-                st.markdown("---")
+            st.markdown("---")
+            st.write("#### 🛠️ Edit or Delete Existing Clinics")
+            
+            # 2. Edit/Delete Clinics: Fix TypeError
+            if isinstance(raw_polis, list) and len(raw_polis) > 0:
                 for p in raw_polis:
                     with st.expander(f"Clinic: {p['clinic']} ({p['prefix']})"):
-                        new_name = st.text_input("New Name", value=p['clinic'], key=f"ed_cl_nm_{p['clinic']}")
-                        new_pref = st.text_input("New Prefix", value=p['prefix'], key=f"ed_cl_pr_{p['clinic']}")
+                        edit_name = st.text_input("Change Name", value=p['clinic'], key=f"ed_cl_nm_{p['clinic']}")
+                        edit_pref = st.text_input("Change Prefix", value=p['prefix'], key=f"ed_cl_pr_{p['clinic']}")
                         
-                        col1, col2 = st.columns(2)
-                        if col1.button("💾 Save Changes", key=f"sv_cl_{p['clinic']}"):
-                            res = requests.put(f"{API_URL}/admin/polis/{p['clinic']}", 
-                                             json={"clinic": new_name, "prefix": new_pref}, headers=headers)
+                        col_c1, col_c2 = st.columns(2)
+                        if col_c1.button("💾 Save", key=f"btn_sv_cl_{p['clinic']}", use_container_width=True):
+                            res = requests.put(f"{API_URL}/admin/polis/{p['clinic']}", json={"clinic": edit_name, "prefix": edit_pref}, headers=headers)
                             if res.status_code == 200: st.success("Updated!"); st.rerun()
                             else: st.error(res.text)
                             
-                        if col2.button("🗑️ Delete Clinic", key=f"dl_cl_{p['clinic']}"):
+                        if col_c2.button("🗑️ Delete", key=f"btn_dl_cl_{p['clinic']}", use_container_width=True, type="secondary"):
                             res = requests.delete(f"{API_URL}/admin/polis/{p['clinic']}", headers=headers)
-                            if res.status_code == 200:
-                                st.success("Deleted!"); st.rerun()
-                            else:
-                                # Backend akan mengirim error jika masih ada dokter di klinik ini
-                                st.error(f"⛔ {res.json().get('detail')}")
-        # --- TAB 3: DATA IMPORTER ---
+                            if res.status_code == 200: st.success("Deleted!"); st.rerun()
+                            else: st.error(res.json().get('detail', 'Error'))
+            else:
+                st.info("No clinic data found. Add a clinic above first.")
+        # --- TAB 3: DATA IMPORTER (VARIED DATA) ---
         with t_imp:
-            st.subheader("Generate Dummy Analytics Data")
-            cnt = st.number_input("Records to generate", 10, 100, 20)
-            if st.button("🚀 Start Import Process"):
-                with st.spinner("Processing..."):
+            st.subheader("Generate Data for Analytics")
+            cnt = st.number_input("Records to generate", 10, 100, 30)
+            if st.button("🚀 Start Import (Varied Data)"):
+                with st.spinner("Simulating varied traffic..."):
                     r = requests.get(f"{API_URL}/admin/import-random-data", params={"count": cnt}, headers=headers)
                     if r.status_code == 200: st.success(r.json().get('message')); st.balloons()
-
     # 7. DATA SCIENCE MENU
     elif menu == MENU_INSIGHTS:
         st.header("📈 Data Science & Strategic Insights")

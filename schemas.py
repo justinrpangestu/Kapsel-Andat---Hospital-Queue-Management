@@ -33,34 +33,40 @@ def format_poli_name(name: str) -> str:
 # --- SCHEMAS ---
 
 class PoliCreate(BaseModel):
-    poli: str = Field(..., min_length=3)
+    clinic: str = Field(..., min_length=3)
     prefix: str = Field(..., min_length=1, max_length=5)
     
-    @field_validator('poli')
-    def format_poli(cls, v):
-        return format_poli_name(v)
-
+    @field_validator('clinic')
+    @classmethod
+    def format_clinic_suffix(cls, v: str) -> str:
+        if not v: return v
+        # Normalisasi: Hapus spasi berlebih, jadikan Title Case
+        clean = v.strip().title()
+        # Jika input cuma "Ento", tambahkan " Clinic"
+        if not clean.lower().endswith("clinic"):
+            return f"{clean} Clinic"
+        return clean
     @field_validator('prefix')
     def check_prefix(cls, v):
         v = validate_not_empty(v, "Prefix")
         if not v.isalpha(): raise ValueError('Prefix must contain only letters (A-Z).')
         return v.upper()
     
-    model_config = ConfigDict(json_schema_extra={"example": {"poli": "Dental", "prefix": "DENT"}})
+    model_config = ConfigDict(json_schema_extra={"example": {"clinic": "Dental", "prefix": "DENT"}})
 
 class DoctorCreate(BaseModel):
-    dokter: str = Field(..., min_length=3)
-    poli: str = Field(...)
+    doctor: str = Field(..., min_length=3)
+    clinic: str = Field(...)
     practice_start_time: str = Field(..., pattern=r"^\d{2}:\d{2}$")
     practice_end_time: str = Field(..., pattern=r"^\d{2}:\d{2}$")
     max_patients: int = Field(default=20, ge=1)
     doctor_id: Optional[int] = Field(default=None)
 
-    @field_validator('dokter')
+    @field_validator('doctor')
     def format_name(cls, v):
         return format_doctor_title(v)
     
-    @field_validator('poli')
+    @field_validator('clinic')
     def format_poli_doc(cls, v):
         return format_poli_name(v)
 

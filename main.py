@@ -55,12 +55,13 @@ def clean_simple_name(full_name: str) -> str:
     return parts[-1].title() if parts else "User"
 
 def normalize_doctor_name(name: str) -> str:
-    """Membersihkan gelar ganda seperti dr.Dr. atau Dr.dr. menjadi dr. saja"""
+    """Task 3: Menjamin gelar tunggal dr. melalui pemetaan injektif"""
     if not name: return "dr. Unknown"
-    # Menghapus semua variasi dr, dr., Dr, DR di awal string berulang kali
-    clean = re.sub(r'^(?:dr|dr\.|drs|dra|ir|prof|h|hj|ns|mr|mrs)\.?\s*', '', name, flags=re.IGNORECASE)
-    while re.match(r'^(?:dr|dr\.|drs|dra|ir|prof|h|hj|ns|mr|mrs)\.?\s*', clean, flags=re.IGNORECASE):
-        clean = re.sub(r'^(?:dr|dr\.|drs|dra|ir|prof|h|hj|ns|mr|mrs)\.?\s*', '', clean, flags=re.IGNORECASE)
+    # Menghapus semua variasi dr, prof, dll secara rekursif
+    pattern = r'^(?:dr|prof|ir|drs|dra|h|hj|ns|mr|mrs)\.?\s*'
+    clean = name.strip()
+    while re.match(pattern, clean, flags=re.IGNORECASE):
+        clean = re.sub(pattern, '', clean, count=1, flags=re.IGNORECASE)
     return f"dr. {clean.strip().title()}"
 
 def get_estimated_wait_time(db: Session, doctor_id: int, current_queue_seq: int, v_date: date):
@@ -170,40 +171,71 @@ def get_doctors(db: Session = Depends(get_db)):
 
 @router_admin.post("/doctors")
 def add_doctor(p: schemas.DoctorCreate, db: Session = Depends(get_db)):
-    if not db.query(storage.TabelPoli).filter(storage.TabelPoli.clinic == p.clinic).first():
-        raise HTTPException(404, "Clinic not found")
+    # VALIDASI & NORMALISASI (Tugas 3)
+    final_name = normalize_doctor_name(p.doctor)
     
-    clean_name = f"dr. {clean_simple_name(p.doctor)}"
+    # Cek keberadaan klinik
+    poli = db.query(storage.TabelPoli).filter(storage.TabelPoli.clinic == p.clinic).first()
+    if not poli:
+        raise HTTPException(404, detail=f"Clinic '{p.clinic}' not found.")
+    
+    # Hitung ID berikutnya
     max_id = db.query(func.max(storage.TabelDokter.doctor_id)).scalar()
     next_id = 1 if max_id is None else max_id + 1
     
-    # Generate Code
-    last = db.query(storage.TabelDokter).filter(storage.TabelDokter.clinic == p.clinic).order_by(storage.TabelDokter.doctor_id.desc()).first()
-    try: nxt_num = int(last.doctor_code.split('-')[-1]) + 1 if last else 1
-    except: nxt_num = 1
-    prefix = db.query(storage.TabelPoli).filter(storage.TabelPoli.clinic == p.clinic).first().prefix
-    code = f"{prefix}-{nxt_num:03d}"
+    # Generasi Doctor Code otomatis (Prefix Klinik - Urutan)
+    last_doc = db.query(storage.TabelDokter).filter(storage.TabelDokter.clinic == p.clinic).order_by(storage.TabelDokter.doctor_id.desc()).first()
+    try:
+        nxt_num = int(last_doc.doctor_code.split('-')[-1]) + 1 if last_doc else 1
+    except:
+        nxt_num = 1
+    code = f"{poli.prefix}-{nxt_num:03d}"
     
-    new = storage.TabelDokter(
-        doctor_id=next_id, doctor=clean_name, clinic=p.clinic,
-        practice_start_time=datetime.strptime(p.practice_start_time, "%H:%M").time(),
-        practice_end_time=datetime.strptime(p.practice_end_time, "%H:%M").time(),
-        doctor_code=code, max_patients=p.max_patients
-    )
-    db.add(new); db.commit(); db.refresh(new)
-    return new
+    try:
+        new_doc = storage.TabelDokter(
+            doctor_id=next_id,
+            doctor=final_name, # Menggunakan nama yang sudah bersih
+            clinic=p.clinic,
+            practice_start_time=datetime.strptime(p.practice_start_time, "%H:%M").time(),
+            practice_end_time=datetime.strptime(p.practice_end_time, "%H:%M").time(),
+            doctor_code=code,
+            max_patients=p.max_patients
+        )
+        db.add(new_doc)
+        db.commit()
+        db.refresh(new_doc)
+        return new_doc
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, detail=f"Failed to save doctor: {str(e)}")
+
+
 @router_admin.put("/doctors/{id}")
 def update_doctor(id: int, p: schemas.DoctorCreate, db: Session = Depends(get_db)):
+    # Cari data dokter yang ada
     doc = db.query(storage.TabelDokter).filter(storage.TabelDokter.doctor_id == id).first()
-    if not doc: raise HTTPException(404, "Doctor not found")
+    if not doc:
+        raise HTTPException(404, detail="Doctor not found")
     
-    doc.doctor = f"dr. {clean_simple_name(p.doctor)}"
-    doc.clinic = p.clinic
-    doc.max_patients = p.max_patients
-    doc.practice_start_time = datetime.strptime(p.practice_start_time, "%H:%M").time()
-    doc.practice_end_time = datetime.strptime(p.practice_end_time, "%H:%M").time()
-    db.commit()
-    return {"message": "Doctor information updated"}
+    # Validasi Klinik Baru (Jika klinik diubah)
+    if p.clinic != doc.clinic:
+        if not db.query(storage.TabelPoli).filter(storage.TabelPoli.clinic == p.clinic).first():
+            raise HTTPException(404, detail="Target clinic does not exist")
+
+    # UPDATE DATA DENGAN NORMALISASI (Tugas 3)
+    try:
+        doc.doctor = normalize_doctor_name(p.doctor) # Membersihkan nama saat update
+        doc.clinic = p.clinic
+        doc.max_patients = p.max_patients
+        doc.practice_start_time = datetime.strptime(p.practice_start_time, "%H:%M").time()
+        doc.practice_end_time = datetime.strptime(p.practice_end_time, "%H:%M").time()
+        
+        db.commit()
+        db.refresh(doc)
+        return {"message": "Doctor information updated successfully", "data": doc}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, detail=f"Update failed: {str(e)}")
 @router_admin.delete("/doctors/{id}")
 def delete_doctor(id: int, db: Session = Depends(get_db)):
     d = db.query(storage.TabelDokter).filter(storage.TabelDokter.doctor_id == id).first()
@@ -227,22 +259,62 @@ def add_poli(p: schemas.PoliCreate, db: Session = Depends(get_db)):
     new_poli = storage.TabelPoli(clinic=p.clinic, prefix=p.prefix)
     db.add(new_poli); db.commit()
     return {"message": "Clinic added successfully"}
+
 @router_admin.put("/polis/{old_clinic_name}")
 def update_poli(old_clinic_name: str, p: schemas.PoliCreate, db: Session = Depends(get_db)):
-    poli = db.query(storage.TabelPoli).filter(storage.TabelPoli.clinic == old_clinic_name).first()
-    if not poli: raise HTTPException(404, "Clinic not found")
-    
-    # Validasi: Cek jika nama baru sudah dipakai klinik lain
-    if old_clinic_name != p.clinic:
-        if db.query(storage.TabelPoli).filter(storage.TabelPoli.clinic == p.clinic).first():
-            raise HTTPException(400, "New clinic name already exists")
-    
-    # Update data utama dan relasi di tabel dokter
-    db.query(storage.TabelDokter).filter(storage.TabelDokter.clinic == old_clinic_name).update({"clinic": p.clinic})
-    poli.clinic = p.clinic
-    poli.prefix = p.prefix
-    db.commit()
-    return {"message": "Clinic and linked doctors updated"}
+    # 1. Cari data klinik lama
+    old_poli = db.query(storage.TabelPoli).filter(storage.TabelPoli.clinic == old_clinic_name).first()
+    if not old_poli:
+        raise HTTPException(404, detail="Original clinic not found")
+
+    # Kasus A: Nama tidak berubah, hanya update prefix
+    if old_clinic_name == p.clinic:
+        # Cek apakah prefix baru sudah dipakai klinik lain
+        existing_pref = db.query(storage.TabelPoli).filter(
+            storage.TabelPoli.prefix == p.prefix, 
+            storage.TabelPoli.clinic != old_clinic_name
+        ).first()
+        if existing_pref:
+            raise HTTPException(400, detail=f"Prefix '{p.prefix}' already used by {existing_pref.clinic}")
+            
+        old_poli.prefix = p.prefix
+        db.commit()
+        return {"message": "Prefix updated successfully"}
+
+    # Kasus B: Nama berubah (Memerlukan Migrasi)
+    # 2. VALIDASI: Cek apakah nama baru sudah ada
+    if db.query(storage.TabelPoli).filter(storage.TabelPoli.clinic == p.clinic).first():
+        raise HTTPException(400, detail="New clinic name already exists")
+
+    try:
+        # 3. FIX DUPLICATE ENTRY: 
+        # Jika prefix-nya tetap sama, kita harus mengubah prefix lama menjadi 'TEMP' 
+        # agar tidak bentrok saat proses INSERT entitas baru
+        original_prefix = old_poli.prefix
+        old_poli.prefix = f"TEMP_{original_prefix}_{random.randint(100,999)}"
+        db.flush() 
+
+        # 4. Buat entitas Induk baru
+        new_poli = storage.TabelPoli(clinic=p.clinic, prefix=p.prefix)
+        db.add(new_poli)
+        db.flush() 
+
+        # 5. Migrasi data Dokter (Anak)
+        db.query(storage.TabelDokter).filter(
+            storage.TabelDokter.clinic == old_clinic_name
+        ).update({"clinic": p.clinic})
+
+        # 6. Hapus Induk yang lama
+        db.delete(old_poli)
+        
+        db.commit()
+        return {"message": f"Successfully updated to {p.clinic}"}
+    except Exception as e:
+        db.rollback()
+        # Jika error karena prefix masih bentrok dengan klinik LAIN (bukan dirinya sendiri)
+        if "Duplicate entry" in str(e):
+            raise HTTPException(400, detail=f"The prefix '{p.prefix}' is already used by another clinic.")
+        raise HTTPException(500, detail=f"Database Sync Error: {str(e)}")
 
 @router_admin.delete("/polis/{clinic_name}")
 def delete_poli(clinic_name: str, db: Session = Depends(get_db)):
@@ -257,52 +329,65 @@ def delete_poli(clinic_name: str, db: Session = Depends(get_db)):
     return {"message": "Clinic deleted"}
 
 @router_admin.get("/import-random-data")
-def import_random_data(count: int = 10, db: Session = Depends(get_db)):
+def import_random_data(count: int = 20, db: Session = Depends(get_db)):
     try:
-        fake = Faker('id_ID')
-        df_doc, df_pas = csv_utils.get_merged_random_data(count)
+        # 1. Ambil data master (Himpunan Induk)
+        doctors = db.query(storage.TabelDokter).all()
+        if not doctors:
+            raise HTTPException(400, "Please add doctors first before importing data.")
         
-        c = 0
-        for i in range(count):
-            if not df_doc.empty:
-                row = df_doc.sample(n=1).iloc[0]
-                r_clinic = schemas.format_poli_name(str(row['clinic']))
-                r_doc_name = f"dr. {clean_simple_name(str(row['doctor']))}"
-                r_prefix = str(row.get('prefix', r_clinic[:4].upper())).strip()
-                
-                if not db.query(storage.TabelPoli).filter(storage.TabelPoli.clinic == r_clinic).first():
-                    db.add(storage.TabelPoli(clinic=r_clinic, prefix=r_prefix)); db.commit()
-                
-                doc = db.query(storage.TabelDokter).filter(storage.TabelDokter.doctor == r_doc_name).first()
-                if not doc:
-                    mid = db.query(func.max(storage.TabelDokter.doctor_id)).scalar() or 0
-                    doc = storage.TabelDokter(doctor_id=mid+1, doctor=r_doc_name, clinic=r_clinic, 
-                                              practice_start_time=time(8,0), practice_end_time=time(16,0), 
-                                              doctor_code=f"{r_prefix}-001", max_patients=20)
-                    db.add(doc); db.commit()
+        statuses = ["Registered", "Arrival", "Serving", "Finished"]
+        
+        for _ in range(count):
+            doc = random.choice(doctors)
+            # Tentukan status secara acak dengan bobot agar banyak yang 'Finished' (untuk analitik)
+            status = random.choices(statuses, weights=[10, 20, 30, 40], k=1)[0]
             
-            r_nama = clean_simple_name(fake.name())
-            uname = r_nama.lower() + str(random.randint(1,999))
-            if not db.query(storage.TabelUser).filter(storage.TabelUser.username == uname).first():
-                db.add(storage.TabelUser(username=uname, password=security.get_password_hash("123"), role="patient", nama_lengkap=r_nama))
-                db.commit()
+            # Generasi Tanggal & Jam Kedatangan (Antara jam 08:00 - 16:00)
+            base_date = datetime.now() - timedelta(days=random.randint(0, 7))
+            arrival_hour = random.randint(8, 15)
+            arrival_min = random.randint(0, 59)
+            
+            t_arrival = base_date.replace(hour=arrival_hour, minute=arrival_min, second=0)
+            
+            # Inisialisasi variabel waktu
+            checkin = None
+            entry = None
+            finish = None
+            
+            # Logika Rantai Waktu (Temporal Consistency)
+            if status in ["Arrival", "Serving", "Finished"]:
+                # Check-in terjadi 5-15 menit setelah registrasi/dasar jam datang
+                checkin = t_arrival + timedelta(minutes=random.randint(5, 15))
+            
+            if status in ["Serving", "Finished"]:
+                # Masuk klinik 15-45 menit setelah check-in (Waktu Tunggu)
+                entry = checkin + timedelta(minutes=random.randint(15, 45))
+            
+            if status == "Finished":
+                # Selesai 10-30 menit setelah masuk klinik (Waktu Layan)
+                finish = entry + timedelta(minutes=random.randint(10, 30))
 
-            r_date = date.today()
-            r_stat = "Finished"
-
-            new_t = storage.TabelPelayanan(
-                username=uname, status_member="Member", patient_name=r_nama, clinic=r_clinic, 
-                doctor=doc.doctor, doctor_id_ref=doc.doctor_id, visit_date=r_date, 
-                service_status=r_stat, queue_number=f"{r_prefix}-001-{i:03d}", queue_sequence=i+1
+            # Simpan ke Database
+            new_record = storage.TabelPelayanan(
+                queue_number=f"{doc.doctor_code}-{random.randint(100,999)}",
+                patient_name=f"Dummy Patient {random.randint(1000, 9999)}",
+                clinic=doc.clinic,
+                doctor=doc.doctor,
+                visit_date=t_arrival.date(),
+                service_status=status,
+                checkin_time=checkin,
+                clinic_entry_time=entry,
+                completion_time=finish,
+                catatan_medis=random.choice(["Flu", "Checkup", "Healthy", "Cough", "Fever"]) if status == "Finished" else None
             )
-            db.add(new_t); db.commit()
-            c += 1
-            
-        return {"message": f"Successfully imported {c} records."}
+            db.add(new_record)
+        
+        db.commit()
+        return {"message": f"Successfully imported {count} varied records."}
     except Exception as e:
         db.rollback()
-        raise HTTPException(500, str(e))
-
+        raise HTTPException(500, detail=str(e))
 # =================================================================
 # 5. OPS ROUTER (Scanner & Notes)
 # =================================================================
