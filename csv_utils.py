@@ -43,4 +43,4 @@ def append_to_csv(filename: str, data: dict):
             writer.writeheader()
         # Filter the dictionary to only include keys that match the CSV header
         row = {k: v for k, v in data.items() if k in field_order}
-        writer.writerow(row)
+        writer.writerow(row) 

@@ -582,4 +582,4 @@ app.include_router(router_public, prefix="/public", dependencies=[Depends(requir
 app.include_router(router_ops, prefix="/ops", dependencies=[Depends(require_role(["admin", "nurse", "reception"]))])
 app.include_router(router_monitor, prefix="/monitor", dependencies=[Depends(require_role(["admin", "reception", "patient"]))])
 app.include_router(router_admin, prefix="/admin", dependencies=[Depends(require_role(["admin"]))])
-app.include_router(router_analytics, prefix="/analytics", dependencies=[Depends(require_role(["admin"]))])
+app.include_router(router_analytics, prefix="/analytics", dependencies=[Depends(require_role(["admin"]))]) 

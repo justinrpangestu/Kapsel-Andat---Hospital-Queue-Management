@@ -41,4 +41,4 @@ def get_current_user_token(token: str = Depends(oauth2_scheme)):
         if username is None: raise credentials_exception
         return {"username": username, "role": role}
     except JWTError:
-        raise credentials_exception
+        raise credentials_exception 

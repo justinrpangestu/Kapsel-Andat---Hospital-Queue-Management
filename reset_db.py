@@ -27,4 +27,4 @@ def reset_database():
     print("✅ Success! Database is now clean and ready.")
 
 if __name__ == "__main__":
-    reset_database()
+    reset_database() 

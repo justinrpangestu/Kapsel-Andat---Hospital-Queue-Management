@@ -87,5 +87,5 @@ def test_pendaftaran_dan_kuota():
 def test_trim_username_logic():
     unique = f"  Trim_{uuid.uuid4().hex[:4]}  "
     client.post("/auth/register", json={"username": unique, "password": "123", "nama_lengkap": "Trim Test"})
-    response = client.post("/auth/login", data={"username": unique.strip().lower(), "password": "123"})
+    response = client.post("/auth/login", data={"username": unique.strip().lower(), "password": "123"}) 
     assert response.status_code == 200

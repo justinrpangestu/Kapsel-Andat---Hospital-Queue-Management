@@ -82,4 +82,4 @@ class TabelUser(Base):
     password = Column(String(255))
     role = Column(String(20)) 
     nama_lengkap = Column(String(100))
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow) 

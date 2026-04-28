@@ -40,4 +40,4 @@ def init_users_final():
         db.close()
 
 if __name__ == "__main__":
-    init_users_final()
+    init_users_final() 

@@ -21,4 +21,4 @@ argon2-cffi
 python-multipart
 passlib[argon2]
 pytest
-httpx
+httpx 

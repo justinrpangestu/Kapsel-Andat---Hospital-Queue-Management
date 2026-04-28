@@ -599,4 +599,4 @@ else:
                     else: st.info("Insufficient diagnosis text data for mining.")
 
                 else: st.error("Failed to fetch analytics from engine.")
-        except Exception as e: st.error(f"Analytics Pipeline Error: {e}")
+        except Exception as e: st.error(f"Analytics Pipeline Error: {e}") 

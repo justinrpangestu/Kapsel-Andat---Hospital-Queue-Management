@@ -144,4 +144,4 @@ class PelayananSchema(BaseModel):
     estimated_wait_time: Optional[int] = None
     sisa_kuota: Optional[int] = None
     doctor_schedule: Optional[str] = None
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True) 
