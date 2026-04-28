@@ -33,9 +33,7 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
-# --- Streamlit ---
+# --- Streamlit and Logs---
 # Folder config streamlit (jika ada)
 .streamlit/
-
-# --- Logs ---
 *.log
